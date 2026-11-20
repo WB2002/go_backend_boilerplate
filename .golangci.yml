@@ -1,0 +1,51 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters-settings:
+  govet:
+    enable-all: false
+    enable:
+      - nilness
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: package-comments
+        disabled: true
+
+  forbidigo:
+    forbid:
+      - p: '^(temp|tmp)$'
+        msg: "Vague temporary variable name. Use a descriptive domain identifier."
+      - p: '^(foo|bar|baz|qux)$'
+        msg: "Placeholder identifier. Use a realistic domain identifier."
+      - p: '^(obj|thing|stuff)$'
+        msg: "Vague generic variable name. Name the specific domain model."
+      - p: '^(var[0-9]+|testVar|myVar|myFunc)$'
+        msg: "Vague numbered or informal variable name. Use a descriptive domain identifier."
+      - p: '^(doSomething|handleStuff|processData|dummyFunc)$'
+        msg: "Vague placeholder function. Name the specific domain action."
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gofmt
+    - revive
+    - forbidigo
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

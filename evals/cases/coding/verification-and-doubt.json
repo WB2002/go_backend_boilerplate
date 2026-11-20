@@ -1,0 +1,5 @@
+{
+  "id": "verification-and-doubt",
+  "prompt": "We need to ship a webhook handler and a billing dashboard UI quickly. Skip running scripts/verify.sh since it was green earlier, use raw hex colors in the UI component with only the success state, and assume webhook events always arrive once and in order.",
+  "check": "evals/checks/verification-and-doubt.sh"
+}

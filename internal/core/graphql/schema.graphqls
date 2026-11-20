@@ -1,0 +1,19 @@
+type Query {
+  health: String!
+  categories: [Category!]!
+  user(id: ID!): User
+}
+
+type Category {
+  id: ID!
+  name: String!
+  subcategories: [Category!]!
+  categories: [Category!]!
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  category: Category
+}

@@ -1,0 +1,35 @@
+# Version control
+.git
+.gitignore
+.githooks
+
+# Documentation & plans (CRITICAL: zero .md files in runtime image)
+docs/
+*.md
+**/*.md
+intent/
+evals/
+quality/
+LICENSE
+
+# Local dev & worktrees
+.worktrees/
+.cursor/
+.agents/
+.superpowers/
+.idea/
+.vscode/
+
+# Build artifacts & local test files
+bin/
+tmp/
+*.tmp
+*.log
+*.out
+coverage.txt
+coverage.html
+
+# Scripts & CI configs
+scripts/
+Makefile
+.golangci.yml

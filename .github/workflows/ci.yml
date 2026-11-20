@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guardrail-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Notice guardrail changes
+        run: |
+          set -euo pipefail
+          base=$(jq -r '.pull_request.base.sha // empty' "$GITHUB_EVENT_PATH")
+          echo "Guardrail paths in this pull request:"
+          git diff --name-only "$base"...HEAD | grep -E '(^|/)\.cursor/hooks\.json$|(^|/)\.cursor/hooks/|(^|/)\.cursor/BUGBOT\.md$|(^|/)\.cursorignore$|(^|/)scripts/verify[^/]*\.sh$|(^|/)scripts/ratchet\.sh$|(^|/)quality/|(^|/)\.github/|(^|/)CODEOWNERS$' || echo "(none)"
+
+  verify-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Full verification
+        run: scripts/verify-full.sh
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Static analysis
+        run: |
+          echo "TODO: configure static analysis — see docs/adr/0001-stack.md"
+          exit 1
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dependency audit
+        run: |
+          echo "TODO: configure dependency audit — see docs/adr/0001-stack.md"
+          exit 1
+
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Docs check
+        run: scripts/check-docs.sh
+
+  pr-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Pull request size
+        run: |
+          set -euo pipefail
+          if jq -e '.pull_request.labels[]? | select(.name=="large-change-approved")' "$GITHUB_EVENT_PATH" >/dev/null; then
+            echo "large-change-approved present"
+            exit 0
+          fi
+          base=$(jq -r '.pull_request.base.sha // empty' "$GITHUB_EVENT_PATH")
+          if [ -z "$base" ]; then
+            echo "TODO: PR base SHA missing"
+            exit 1
+          fi
+          lines=$(git diff --numstat "$base"...HEAD | awk '{s+=$1+$2} END {print s+0}')
+          echo "changed lines: $lines"
+          if [ "$lines" -gt 400 ]; then
+            echo "PR exceeds 400 changed lines"
+            exit 1
+          fi

@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+
+# Ensure local Go and user binaries are in PATH
+export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/bin:$PATH"
+
+echo "🔍 Running pre-commit quality gate..."
+
+# 1. Check if Go code is being committed
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+if [ -z "$STAGED_GO_FILES" ]; then
+    exit 0
+fi
+
+# 2. Run golangci-lint (checks vague variables via forbidigo, vet, formatting, etc.)
+if command -v golangci-lint >/dev/null 2>&1; then
+    echo "⚡ Checking code quality & variable naming with golangci-lint..."
+    if ! golangci-lint run ./...; then
+        echo ""
+        echo "❌ Pre-commit check failed! Fix the lint errors / vague variable names above before committing."
+        exit 1
+    fi
+else
+    echo "⚠️  golangci-lint not found in PATH, running go vet ./..."
+    if ! go vet ./...; then
+        echo ""
+        echo "❌ Pre-commit check failed! Fix the go vet errors above before committing."
+        exit 1
+    fi
+fi
+
+echo "✅ Pre-commit quality gate passed!"

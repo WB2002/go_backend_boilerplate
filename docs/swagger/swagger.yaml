@@ -1,0 +1,358 @@
+basePath: /
+definitions:
+  account.ChangePasswordRequest:
+    properties:
+      newPassword:
+        maxLength: 128
+        minLength: 8
+        type: string
+      oldPassword:
+        type: string
+    required:
+    - newPassword
+    - oldPassword
+    type: object
+  account.ForgotPasswordRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
+  account.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  account.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        maxLength: 128
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  account.ResetPasswordRequest:
+    properties:
+      newPassword:
+        maxLength: 128
+        minLength: 8
+        type: string
+      token:
+        type: string
+    required:
+    - newPassword
+    - token
+    type: object
+  account.TokenResponse:
+    properties:
+      accessToken:
+        type: string
+      expiresIn:
+        type: integer
+      refreshToken:
+        type: string
+      tokenType:
+        type: string
+    type: object
+  account.UserResponse:
+    properties:
+      createdAt:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+    type: object
+  problem.Details:
+    properties:
+      code:
+        type: string
+      detail:
+        type: string
+      error:
+        type: string
+      instance:
+        type: string
+      invalid_params:
+        items:
+          $ref: '#/definitions/problem.InvalidParam'
+        type: array
+      status:
+        type: integer
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  problem.InvalidParam:
+    properties:
+      code:
+        type: string
+      field:
+        type: string
+      reason:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+  description: Production-grade Go backend boilerplate API.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://example.com/terms/
+  title: Go Backend Boilerplate API
+  version: "1.0"
+paths:
+  /account/change-password:
+    post:
+      consumes:
+      - application/json
+      description: Updates user password given verified old password and compliant
+        new password
+      parameters:
+      - description: Change password payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      security:
+      - BearerAuth: []
+      summary: Change user password
+      tags:
+      - Account
+  /account/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Sends a password reset link to the email address if it exists
+      parameters:
+      - description: Forgot password payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      summary: Request password reset
+      tags:
+      - Account
+  /account/login:
+    post:
+      consumes:
+      - application/json
+      description: Verifies user email and password, returning JWT access and refresh
+        token pair
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/account.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      summary: Authenticate user
+      tags:
+      - Account
+  /account/me:
+    get:
+      description: Returns the profile data of the currently authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/account.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - Account
+  /account/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Invalidates consumed refresh token and issues a new access and
+        refresh token pair
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/account.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      summary: Rotate refresh token
+      tags:
+      - Account
+  /account/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user profile with hashed password credentials
+      parameters:
+      - description: Registration payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/account.UserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      summary: Register a new user account
+      tags:
+      - Account
+  /account/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Updates user password given a valid 15-minute recovery token
+      parameters:
+      - description: Reset password payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Details'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/problem.Details'
+      summary: Finalize password reset
+      tags:
+      - Account
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
