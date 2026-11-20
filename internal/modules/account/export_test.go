@@ -70,6 +70,10 @@ func SetupTestRouterWithDB(t *testing.T) (*gin.Engine, *gorm.DB) {
 	})
 	require.NoError(t, err)
 
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+
 	err = db.AutoMigrate(&User{}, &PasswordReset{})
 	require.NoError(t, err)
 
@@ -146,6 +150,20 @@ func (m *MockRepository) UpdatePassword(ctx context.Context, id, newHash string)
 	return nil
 }
 
+func (m *MockRepository) UpdatePasswordWithTimestamp(ctx context.Context, userID, newHash string, changedAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	utcChangedAt := changedAt.UTC()
+	u.PasswordHash = newHash
+	u.PasswordChangedAt = &utcChangedAt
+	u.UpdatedAt = utcChangedAt
+	return nil
+}
+
 func (m *MockRepository) CreatePasswordReset(ctx context.Context, reset *PasswordReset) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -157,8 +175,8 @@ func (m *MockRepository) FindValidPasswordReset(ctx context.Context, tokenHash s
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.resets[tokenHash]
-	if !ok || r.UsedAt != nil || r.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New("invalid or expired token")
+	if !ok || r.UsedAt != nil || r.ExpiresAt.Before(time.Now().UTC()) {
+		return nil, ErrInvalidToken
 	}
 	return r, nil
 }
@@ -171,10 +189,29 @@ func (m *MockRepository) MarkPasswordResetUsed(ctx context.Context, id string) e
 			if r.UsedAt != nil {
 				return errors.New("token already used")
 			}
-			now := time.Now()
+			now := time.Now().UTC()
 			r.UsedAt = &now
 			return nil
 		}
 	}
 	return errors.New("token not found")
+}
+
+func (m *MockRepository) AtomicResetPassword(ctx context.Context, tokenHash, newHash string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	utcNow := now.UTC()
+	r, ok := m.resets[tokenHash]
+	if !ok || r.UsedAt != nil || !r.ExpiresAt.After(utcNow) {
+		return ErrInvalidToken
+	}
+	u, ok := m.users[r.UserID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	r.UsedAt = &utcNow
+	u.PasswordHash = newHash
+	u.PasswordChangedAt = &utcNow
+	u.UpdatedAt = utcNow
+	return nil
 }

@@ -37,6 +37,12 @@ const (
 	DefaultIssuer = "go_backend_boilerplate"
 )
 
+func init() {
+	// Preserve millisecond precision on IssuedAt/ExpiresAt so password_changed_at
+	// comparisons distinguish tokens minted before vs. after a change within the same second.
+	jwt.TimePrecision = time.Millisecond
+}
+
 // Claims represents strongly-typed JWT claims with user attributes and UUID JTI.
 type Claims struct {
 	UserID    string   `json:"user_id"`
@@ -171,55 +177,15 @@ func (m *JWTTokenManager) GenerateTokenPair(userID string, roles []string) (*Tok
 
 // ValidateAccessToken verifies the RS256 signature, expiration, issuer, audience, and checks Redis revocation.
 func (m *JWTTokenManager) ValidateAccessToken(ctx context.Context, tokenStr string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return m.publicKey, nil
-	},
-		jwt.WithIssuer(DefaultIssuer),
-		jwt.WithAudience("api"),
-		jwt.WithValidMethods([]string{"RS256"}),
-	)
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrTokenExpired
-		}
-		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
-	}
-
-	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
-		return nil, ErrInvalidToken
-	}
-
-	if claims.TokenType != TokenTypeAccess {
-		return nil, ErrInvalidTokenType
-	}
-
-	// Check Redis revocation blacklist or in-memory fallback
-	if m.redisClient != nil && claims.ID != "" {
-		revocationKey := RevokedJTIPrefix + claims.ID
-		exists, err := m.redisClient.Exists(ctx, revocationKey).Result()
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrRevocationCheckFailed, err)
-		}
-		if exists > 0 {
-			return nil, ErrTokenRevoked
-		}
-	} else if claims.ID != "" {
-		if expVal, ok := m.inMemRevoked.Load(claims.ID); ok {
-			if expTime, ok := expVal.(time.Time); ok && time.Now().Before(expTime) {
-				return nil, ErrTokenRevoked
-			}
-		}
-	}
-
-	return claims, nil
+	return m.validateToken(ctx, tokenStr, TokenTypeAccess)
 }
 
 // ValidateRefreshToken verifies RS256 signature, issuer, audience, and validates refresh token claims.
 func (m *JWTTokenManager) ValidateRefreshToken(ctx context.Context, tokenStr string) (*Claims, error) {
+	return m.validateToken(ctx, tokenStr, TokenTypeRefresh)
+}
+
+func (m *JWTTokenManager) validateToken(ctx context.Context, tokenStr, expectedType string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -242,12 +208,16 @@ func (m *JWTTokenManager) ValidateRefreshToken(ctx context.Context, tokenStr str
 		return nil, ErrInvalidToken
 	}
 
-	if claims.TokenType != TokenTypeRefresh {
+	if claims.TokenType != expectedType {
 		return nil, ErrInvalidTokenType
 	}
 
+	if claims.ID == "" {
+		return nil, ErrInvalidToken
+	}
+
 	// Check Redis revocation blacklist or in-memory fallback
-	if m.redisClient != nil && claims.ID != "" {
+	if m.redisClient != nil {
 		revocationKey := RevokedJTIPrefix + claims.ID
 		exists, err := m.redisClient.Exists(ctx, revocationKey).Result()
 		if err != nil {
@@ -256,7 +226,7 @@ func (m *JWTTokenManager) ValidateRefreshToken(ctx context.Context, tokenStr str
 		if exists > 0 {
 			return nil, ErrTokenRevoked
 		}
-	} else if claims.ID != "" {
+	} else {
 		if expVal, ok := m.inMemRevoked.Load(claims.ID); ok {
 			if expTime, ok := expVal.(time.Time); ok && time.Now().Before(expTime) {
 				return nil, ErrTokenRevoked

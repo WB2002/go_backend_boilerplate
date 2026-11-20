@@ -266,15 +266,28 @@ func (h *Handler) Refresh(c *gin.Context) {
 		return
 	}
 
-	if claims.ID != "" {
-		var remainingTTL time.Duration
-		if claims.ExpiresAt != nil {
-			remainingTTL = time.Until(claims.ExpiresAt.Time)
+	if user.PasswordChangedAt != nil {
+		if claims.IssuedAt == nil || claims.IssuedAt.Time.Before(*user.PasswordChangedAt) {
+			problem.Respond(c, http.StatusUnauthorized, "TOKEN_INVALIDATED", "Unauthorized", "Refresh token invalidated due to password change.")
+			return
 		}
-		if remainingTTL <= 0 {
-			remainingTTL = 24 * time.Hour
-		}
-		_ = h.tokenManager.RevokeToken(c.Request.Context(), claims.ID, remainingTTL)
+	}
+
+	if claims.ID == "" {
+		problem.Respond(c, http.StatusUnauthorized, "INVALID_REFRESH_TOKEN", "Unauthorized", "Invalid or expired refresh token.")
+		return
+	}
+
+	var remainingTTL time.Duration
+	if claims.ExpiresAt != nil {
+		remainingTTL = time.Until(claims.ExpiresAt.Time)
+	}
+	if remainingTTL <= 0 {
+		remainingTTL = 24 * time.Hour
+	}
+	if err := h.tokenManager.RevokeToken(c.Request.Context(), claims.ID, remainingTTL); err != nil {
+		problem.Respond(c, http.StatusServiceUnavailable, "TOKEN_REVOCATION_FAILED", "Service Unavailable", "Failed to revoke refresh token.")
+		return
 	}
 
 	tokens, err := h.tokenManager.GenerateTokenPair(user.ID, []string(user.Roles))
@@ -376,7 +389,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.repo.UpdatePassword(c.Request.Context(), user.ID, newHash); err != nil {
+	if err := h.repo.UpdatePasswordWithTimestamp(c.Request.Context(), user.ID, newHash, time.Now().UTC()); err != nil {
 		problem.Respond(c, http.StatusInternalServerError, "UPDATE_PASSWORD_FAILED", "Internal Server Error", "Failed to update password.")
 		return
 	}
@@ -490,12 +503,14 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.repo.UpdatePassword(c.Request.Context(), reset.UserID, newHash); err != nil {
+	if err := h.repo.AtomicResetPassword(c.Request.Context(), tokenHash, newHash, time.Now().UTC()); err != nil {
+		if errors.Is(err, ErrInvalidToken) {
+			problem.Respond(c, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "Bad Request", "Password reset token is invalid or expired.")
+			return
+		}
 		problem.Respond(c, http.StatusInternalServerError, "UPDATE_PASSWORD_FAILED", "Internal Server Error", "Failed to update password.")
 		return
 	}
-
-	_ = h.repo.MarkPasswordResetUsed(c.Request.Context(), reset.ID)
 
 	if h.audit != nil {
 		h.audit.LogAsync(audit.Entry{

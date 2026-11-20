@@ -70,13 +70,14 @@ func parseRoles(raw string) []string {
 
 // User represents the persistent user account domain entity.
 type User struct {
-	ID           string    `gorm:"type:uuid;primaryKey" json:"id"`
-	Email        string    `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	Roles        Roles     `gorm:"type:text;not null" json:"roles"`
-	Status       string    `gorm:"type:varchar(50);not null;default:'active'" json:"status"`
-	CreatedAt    time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
-	UpdatedAt    time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
+	ID                string     `gorm:"type:uuid;primaryKey" json:"id"`
+	Email             string     `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
+	PasswordHash      string     `gorm:"not null" json:"-"`
+	PasswordChangedAt *time.Time `json:"password_changed_at,omitempty"`
+	Roles             Roles      `gorm:"type:text;not null" json:"roles"`
+	Status            string     `gorm:"type:varchar(50);not null;default:'active'" json:"status"`
+	CreatedAt         time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
+	UpdatedAt         time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
 }
 
 // TableName overrides the default table name for User.
@@ -107,7 +108,7 @@ type RegisterRequest struct {
 // LoginRequest represents user login credentials.
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 // TokenResponse represents authenticated token response payload.
@@ -120,7 +121,7 @@ type TokenResponse struct {
 
 // ChangePasswordRequest represents a password rotation payload.
 type ChangePasswordRequest struct {
-	OldPassword string `json:"oldPassword" binding:"required"`
+	OldPassword string `json:"oldPassword" binding:"required,max=128"`
 	NewPassword string `json:"newPassword" binding:"required,min=8,max=128"`
 }
 

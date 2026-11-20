@@ -2,15 +2,24 @@ package account_test
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go_backend_boilerplate/internal/core/auth"
 	"go_backend_boilerplate/internal/modules/account"
 )
 
@@ -424,4 +433,320 @@ func TestAccountDeactivatedUserRejection(t *testing.T) {
 	reqRefDeactivated.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(wRefDeactivated, reqRefDeactivated)
 	assert.Equal(t, http.StatusUnauthorized, wRefDeactivated.Code)
+}
+
+func TestAccount_TokenInvalidatedAfterPasswordChange(t *testing.T) {
+	router, db := account.SetupTestRouterWithDB(t)
+
+	email := "tokinvalidate@example.com"
+	password := "Password123!@#"
+	newPassword := "NewPassword123!@#"
+
+	regBody, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password,
+	})
+	wReg := httptest.NewRecorder()
+	reqReg, _ := http.NewRequest(http.MethodPost, "/account/register", bytes.NewReader(regBody))
+	reqReg.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReg, reqReg)
+	require.Equal(t, http.StatusCreated, wReg.Code)
+
+	// 1. Login to obtain pre-change tokens
+	wLogin := httptest.NewRecorder()
+	reqLogin, _ := http.NewRequest(http.MethodPost, "/account/login", bytes.NewReader(regBody))
+	reqLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wLogin, reqLogin)
+	require.Equal(t, http.StatusOK, wLogin.Code)
+
+	var loginResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(wLogin.Body.Bytes(), &loginResp))
+	accessToken1 := loginResp["accessToken"].(string)
+	refreshToken1 := loginResp["refreshToken"].(string)
+
+	// 2. Change password -> sets password_changed_at
+	changeBody, _ := json.Marshal(map[string]string{
+		"oldPassword": password,
+		"newPassword": newPassword,
+	})
+	wChange := httptest.NewRecorder()
+	reqChange, _ := http.NewRequest(http.MethodPost, "/account/change-password", bytes.NewReader(changeBody))
+	reqChange.Header.Set("Content-Type", "application/json")
+	reqChange.Header.Set("Authorization", "Bearer "+accessToken1)
+	router.ServeHTTP(wChange, reqChange)
+	require.Equal(t, http.StatusOK, wChange.Code)
+
+	// 3. Pre-change refresh token must be rejected with 401
+	refBody1, _ := json.Marshal(map[string]string{"refreshToken": refreshToken1})
+	wRef1 := httptest.NewRecorder()
+	reqRef1, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(refBody1))
+	reqRef1.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wRef1, reqRef1)
+	assert.Equal(t, http.StatusUnauthorized, wRef1.Code)
+
+	// 4. Login with new password -> post-change refresh token must succeed
+	newLoginBody, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": newPassword,
+	})
+	wLogin2 := httptest.NewRecorder()
+	reqLogin2, _ := http.NewRequest(http.MethodPost, "/account/login", bytes.NewReader(newLoginBody))
+	reqLogin2.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wLogin2, reqLogin2)
+	require.Equal(t, http.StatusOK, wLogin2.Code)
+
+	var loginResp2 map[string]interface{}
+	require.NoError(t, json.Unmarshal(wLogin2.Body.Bytes(), &loginResp2))
+	refreshToken2 := loginResp2["refreshToken"].(string)
+
+	refBody2, _ := json.Marshal(map[string]string{"refreshToken": refreshToken2})
+	wRef2 := httptest.NewRecorder()
+	reqRef2, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(refBody2))
+	reqRef2.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wRef2, reqRef2)
+	assert.Equal(t, http.StatusOK, wRef2.Code)
+
+	// 5. Password reset must also invalidate pre-reset refresh tokens
+	var loginResp3 map[string]interface{}
+	require.NoError(t, json.Unmarshal(wRef2.Body.Bytes(), &loginResp3))
+	refreshToken3 := loginResp3["refreshToken"].(string)
+
+	var user account.User
+	require.NoError(t, db.Where("email = ?", email).First(&user).Error)
+
+	rawResetToken := uuid.NewString()
+	sum := sha256.Sum256([]byte(rawResetToken))
+	require.NoError(t, db.Create(&account.PasswordReset{
+		ID:        uuid.NewString(),
+		UserID:    user.ID,
+		TokenHash: hex.EncodeToString(sum[:]),
+		ExpiresAt: time.Now().Add(15 * time.Minute),
+	}).Error)
+
+	resetBody, _ := json.Marshal(map[string]string{
+		"token":       rawResetToken,
+		"newPassword": "ResetPassword123!@#",
+	})
+	wReset := httptest.NewRecorder()
+	reqReset, _ := http.NewRequest(http.MethodPost, "/account/reset-password", bytes.NewReader(resetBody))
+	reqReset.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReset, reqReset)
+	require.Equal(t, http.StatusOK, wReset.Code)
+
+	refBody3, _ := json.Marshal(map[string]string{"refreshToken": refreshToken3})
+	wRef3 := httptest.NewRecorder()
+	reqRef3, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(refBody3))
+	reqRef3.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wRef3, reqRef3)
+	assert.Equal(t, http.StatusUnauthorized, wRef3.Code)
+}
+
+func TestAccount_ConcurrentPasswordResetAtomicity(t *testing.T) {
+	router, db := account.SetupTestRouterWithDB(t)
+
+	email := "concurrent-reset@example.com"
+	regBody, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": "Password123!@#",
+	})
+	wReg := httptest.NewRecorder()
+	reqReg, _ := http.NewRequest(http.MethodPost, "/account/register", bytes.NewReader(regBody))
+	reqReg.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReg, reqReg)
+	require.Equal(t, http.StatusCreated, wReg.Code)
+
+	var user account.User
+	require.NoError(t, db.Where("email = ?", email).First(&user).Error)
+
+	rawToken := uuid.NewString() + "-" + uuid.NewString()
+	sum := sha256.Sum256([]byte(rawToken))
+	tokenHash := hex.EncodeToString(sum[:])
+
+	require.NoError(t, db.Create(&account.PasswordReset{
+		ID:        uuid.NewString(),
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().Add(15 * time.Minute),
+	}).Error)
+
+	resetBody, _ := json.Marshal(map[string]string{
+		"token":       rawToken,
+		"newPassword": "ConcurrentNewPass123!",
+	})
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(http.MethodPost, "/account/reset-password", bytes.NewReader(resetBody))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			codes[idx] = w.Code
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	successCount := 0
+	badReqCount := 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusOK:
+			successCount++
+		case http.StatusBadRequest:
+			badReqCount++
+		}
+	}
+	assert.Equal(t, 1, successCount, "expected exactly 1 concurrent reset to succeed, got codes=%v", codes)
+	assert.Equal(t, 1, badReqCount, "expected exactly 1 concurrent reset to fail with 400, got codes=%v", codes)
+
+	var updatedReset account.PasswordReset
+	require.NoError(t, db.Where("token_hash = ?", tokenHash).First(&updatedReset).Error)
+	assert.NotNil(t, updatedReset.UsedAt)
+}
+
+func TestAccount_PasswordLengthExceeds128(t *testing.T) {
+	router := account.SetupTestRouter(t)
+
+	email := "maxpass@example.com"
+	password := "Password123!@#"
+	regBody, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password,
+	})
+	wReg := httptest.NewRecorder()
+	reqReg, _ := http.NewRequest(http.MethodPost, "/account/register", bytes.NewReader(regBody))
+	reqReg.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReg, reqReg)
+	require.Equal(t, http.StatusCreated, wReg.Code)
+
+	over128 := "Password123!" + strings.Repeat("a", 117)
+	require.Len(t, over128, 129)
+
+	// 1. Login with password > 128 characters -> 400 Bad Request
+	badLoginBody, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": over128,
+	})
+	wBadLogin := httptest.NewRecorder()
+	reqBadLogin, _ := http.NewRequest(http.MethodPost, "/account/login", bytes.NewReader(badLoginBody))
+	reqBadLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wBadLogin, reqBadLogin)
+	assert.Equal(t, http.StatusBadRequest, wBadLogin.Code)
+
+	// 2. Valid login to obtain access token
+	wLogin := httptest.NewRecorder()
+	reqLogin, _ := http.NewRequest(http.MethodPost, "/account/login", bytes.NewReader(regBody))
+	reqLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wLogin, reqLogin)
+	require.Equal(t, http.StatusOK, wLogin.Code)
+
+	var loginResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(wLogin.Body.Bytes(), &loginResp))
+	accessToken := loginResp["accessToken"].(string)
+
+	// 3. ChangePassword with oldPassword > 128 characters -> 400 Bad Request
+	badChangeBody, _ := json.Marshal(map[string]string{
+		"oldPassword": over128,
+		"newPassword": "NewPassword123!@#",
+	})
+	wBadChange := httptest.NewRecorder()
+	reqBadChange, _ := http.NewRequest(http.MethodPost, "/account/change-password", bytes.NewReader(badChangeBody))
+	reqBadChange.Header.Set("Content-Type", "application/json")
+	reqBadChange.Header.Set("Authorization", "Bearer "+accessToken)
+	router.ServeHTTP(wBadChange, reqBadChange)
+	assert.Equal(t, http.StatusBadRequest, wBadChange.Code)
+}
+
+type failingRevokeTokenManager struct {
+	auth.TokenManager
+	claims    *auth.Claims
+	revokeErr error
+}
+
+func (m *failingRevokeTokenManager) ValidateRefreshToken(ctx context.Context, tokenStr string) (*auth.Claims, error) {
+	return m.claims, nil
+}
+
+func (m *failingRevokeTokenManager) RevokeToken(ctx context.Context, jti string, ttl time.Duration) error {
+	return m.revokeErr
+}
+
+func (m *failingRevokeTokenManager) GenerateTokenPair(userID string, roles []string) (*auth.TokenPair, error) {
+	return &auth.TokenPair{
+		AccessToken:  "should-not-be-issued",
+		RefreshToken: "should-not-be-issued",
+		ExpiresAt:    time.Now().Add(15 * time.Minute),
+	}, nil
+}
+
+func TestAccount_RefreshFailsClosedOnRevokeError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := account.NewMockRepository()
+	hasher := auth.NewArgon2idHasher(2, 4, 2*time.Second)
+
+	user := &account.User{
+		ID:           uuid.NewString(),
+		Email:        "failclosed@example.com",
+		PasswordHash: "hash",
+		Status:       "active",
+		Roles:        account.Roles{"user"},
+	}
+	require.NoError(t, repo.Create(context.Background(), user))
+
+	t.Run("revoke error fails closed", func(t *testing.T) {
+		tm := &failingRevokeTokenManager{
+			claims: &auth.Claims{
+				UserID:    user.ID,
+				Roles:     []string{"user"},
+				TokenType: auth.TokenTypeRefresh,
+			},
+			revokeErr: errors.New("redis unavailable"),
+		}
+		tm.claims.ID = "jti-123"
+
+		r := gin.New()
+		h := account.NewHandler(repo, hasher, tm, nil)
+		h.RegisterRoutes(r, func(c *gin.Context) {})
+
+		body, _ := json.Marshal(map[string]string{"refreshToken": "some-refresh-token"})
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.NotContains(t, w.Body.String(), "should-not-be-issued")
+	})
+
+	t.Run("empty claims.ID rejected with 401", func(t *testing.T) {
+		tm := &failingRevokeTokenManager{
+			claims: &auth.Claims{
+				UserID:    user.ID,
+				Roles:     []string{"user"},
+				TokenType: auth.TokenTypeRefresh,
+			},
+			revokeErr: nil,
+		}
+
+		r := gin.New()
+		h := account.NewHandler(repo, hasher, tm, nil)
+		h.RegisterRoutes(r, func(c *gin.Context) {})
+
+		body, _ := json.Marshal(map[string]string{"refreshToken": "some-refresh-token"})
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.NotContains(t, w.Body.String(), "should-not-be-issued")
+	})
 }
