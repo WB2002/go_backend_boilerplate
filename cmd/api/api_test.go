@@ -11,6 +11,7 @@ import (
 
 	"go_backend_boilerplate/internal/config"
 	"go_backend_boilerplate/internal/core/graphql"
+	"go_backend_boilerplate/internal/core/middleware"
 )
 
 func TestDebugRouteExposureControl(t *testing.T) {
@@ -102,4 +103,24 @@ func TestDebugRouteExposureControl(t *testing.T) {
 			assert.Contains(t, wGQL.Body.String(), `"health":"ok"`)
 		})
 	}
+}
+
+func TestGlobalMaxBodySizeMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.MaxBodySize(1 << 20))
+	r.POST("/echo", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	wSmall := httptest.NewRecorder()
+	reqSmall, _ := http.NewRequest(http.MethodPost, "/echo", strings.NewReader(`{"ok":true}`))
+	r.ServeHTTP(wSmall, reqSmall)
+	assert.Equal(t, http.StatusOK, wSmall.Code)
+
+	oversized := strings.Repeat("x", (1<<20)+1)
+	wLarge := httptest.NewRecorder()
+	reqLarge, _ := http.NewRequest(http.MethodPost, "/echo", strings.NewReader(oversized))
+	r.ServeHTTP(wLarge, reqLarge)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, wLarge.Code)
 }

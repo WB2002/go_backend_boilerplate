@@ -46,7 +46,7 @@ type HTTPConfig struct {
 	ShutdownDrainMs     int      `env:"HTTP_SHUTDOWN_DRAIN_MS" default:"500"`
 	ShutdownForceMs     int      `env:"HTTP_SHUTDOWN_FORCE_MS" default:"1000"`
 	GzipMinSizeBytes    int      `env:"HTTP_GZIP_MIN_SIZE_BYTES" default:"1024"`
-	AllowedOrigins      []string `env:"HTTP_ALLOWED_ORIGINS" default:"*"`
+	AllowedOrigins      []string `env:"HTTP_ALLOWED_ORIGINS" default:""`
 	TrustedProxies      []string `env:"HTTP_TRUSTED_PROXIES" default:""`
 }
 
@@ -88,6 +88,7 @@ type RedisConfig struct {
 	DB           int    `env:"REDIS_DB" default:"0"`
 	PoolSize     int    `env:"REDIS_POOL_SIZE" default:"50"`
 	MinIdleConns int    `env:"REDIS_MIN_IDLE_CONNS" default:"10"`
+	UseTLS       bool   `env:"REDIS_USE_TLS" default:"false"`
 }
 
 // MongoConfig contains MongoDB connection and pool options.
@@ -156,6 +157,7 @@ type SecurityConfig struct {
 type TelemetryConfig struct {
 	HealthCheckCacheTTLMs int    `env:"HEALTH_CHECK_CACHE_TTL_MS" default:"2000"`
 	OTelExporterEndpoint  string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" default:""`
+	OTelExporterInsecure  bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" default:"false"`
 	ServiceName           string `env:"OTEL_SERVICE_NAME" default:"go_backend_boilerplate"`
 }
 
@@ -185,7 +187,18 @@ func Load() (*Config, error) {
 	if err := populateStruct(val); err != nil {
 		return nil, err
 	}
+	applyEnvironmentDefaults(cfg)
 	return cfg, nil
+}
+
+func applyEnvironmentDefaults(cfg *Config) {
+	if rawSSL, ok := os.LookupEnv("POSTGRES_SSLMODE"); !ok || strings.TrimSpace(rawSSL) == "" {
+		if strings.EqualFold(strings.TrimSpace(cfg.App.Env), "development") {
+			cfg.Database.SSLMode = "disable"
+		} else {
+			cfg.Database.SSLMode = "require"
+		}
+	}
 }
 
 func populateStruct(val reflect.Value) error {

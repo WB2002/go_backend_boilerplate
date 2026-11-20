@@ -51,14 +51,18 @@ func InitTracer(ctx context.Context, cfg config.TelemetryConfig) (func(context.C
 	if cfg.OTelExporterEndpoint != "" {
 		var grpcOpts []otlptracegrpc.Option
 		endpoint := cfg.OTelExporterEndpoint
+		lowerEndpoint := strings.ToLower(endpoint)
 
-		if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		if strings.HasPrefix(lowerEndpoint, "http://") || strings.HasPrefix(lowerEndpoint, "https://") {
 			grpcOpts = append(grpcOpts, otlptracegrpc.WithEndpointURL(endpoint))
-			if strings.HasPrefix(endpoint, "http://") {
+			if strings.HasPrefix(lowerEndpoint, "http://") {
 				grpcOpts = append(grpcOpts, otlptracegrpc.WithInsecure())
 			}
 		} else {
-			grpcOpts = append(grpcOpts, otlptracegrpc.WithEndpoint(endpoint), otlptracegrpc.WithInsecure())
+			grpcOpts = append(grpcOpts, otlptracegrpc.WithEndpoint(endpoint))
+			if cfg.OTelExporterInsecure {
+				grpcOpts = append(grpcOpts, otlptracegrpc.WithInsecure())
+			}
 		}
 
 		exporter, expErr := otlptracegrpc.New(ctx, grpcOpts...)

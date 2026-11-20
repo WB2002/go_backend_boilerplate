@@ -188,6 +188,7 @@ func main() {
 	}
 	healthChecker := telemetry.NewHealthChecker(telemetry.Config{
 		CacheTTL: time.Duration(cfg.Telemetry.HealthCheckCacheTTLMs) * time.Millisecond,
+		Env:      cfg.App.Env,
 	}, healthOpts...)
 
 	mailer := email.NewSMTPMailer(email.SMTPConfig{
@@ -227,6 +228,7 @@ func main() {
 			time.Duration(cfg.HTTP.RequestTimeoutMaxMs)*time.Millisecond,
 		),
 		middleware.CORS(cfg.HTTP.AllowedOrigins),
+		middleware.MaxBodySize(1<<20),
 		middleware.InboundOverload(overloadMgr),
 		middleware.RateLimitWithLimiter(
 			rateLimiter,

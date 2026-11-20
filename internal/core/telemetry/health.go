@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +22,7 @@ const DefaultCacheTTL = 2 * time.Second
 // Config holds health check configuration and database clients.
 type Config struct {
 	CacheTTL time.Duration
+	Env      string
 	DB       *gorm.DB
 	Redis    *goredis.Client
 	Mongo    *mongo.Client
@@ -28,6 +30,13 @@ type Config struct {
 
 // Option configures HealthChecker.
 type Option func(*HealthChecker)
+
+// WithEnv sets the application environment name for diagnostic redaction decisions.
+func WithEnv(env string) Option {
+	return func(h *HealthChecker) {
+		h.env = env
+	}
+}
 
 // WithDB sets the GORM database client.
 func WithDB(db *gorm.DB) Option {
@@ -72,12 +81,13 @@ type HealthResponse struct {
 	Status      string                 `json:"status"` // "UP" or "DOWN"
 	Timestamp   time.Time              `json:"timestamp"`
 	Services    map[string]CheckStatus `json:"services,omitempty"`
-	SystemStats SystemStats            `json:"system_stats"`
+	SystemStats *SystemStats           `json:"system_stats,omitempty"`
 }
 
 // HealthChecker coordinates liveness, readiness, and deep dependency health checks.
 type HealthChecker struct {
 	cacheTTL time.Duration
+	env      string
 	db       *gorm.DB
 	redis    *goredis.Client
 	mongo    *mongo.Client
@@ -106,6 +116,7 @@ func NewHealthChecker(cfg Config, opts ...Option) *HealthChecker {
 
 	checker := &HealthChecker{
 		cacheTTL: ttl,
+		env:      cfg.Env,
 		db:       cfg.DB,
 		redis:    cfg.Redis,
 		mongo:    cfg.Mongo,
@@ -167,7 +178,7 @@ func (h *HealthChecker) HandleHealth(c *gin.Context) {
 		res := h.cachedRes
 		code := h.cachedCode
 		h.mu.RUnlock()
-		c.JSON(code, res)
+		c.JSON(code, h.responseForContext(c, res))
 		return
 	}
 	h.mu.RUnlock()
@@ -288,7 +299,7 @@ func (h *HealthChecker) HandleHealth(c *gin.Context) {
 			Status:      statusStr,
 			Timestamp:   innerNow,
 			Services:    services,
-			SystemStats: stats,
+			SystemStats: &stats,
 		}
 
 		// Acquire write lock briefly to store the new cached result
@@ -302,21 +313,71 @@ func (h *HealthChecker) HandleHealth(c *gin.Context) {
 	})
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "DOWN",
-			"error":  err.Error(),
-		})
+		if h.includeDiagnostics(c) {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "DOWN",
+				"error":  err.Error(),
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "DOWN",
+			})
+		}
 		return
 	}
 
 	result, ok := val.(healthResult)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "DOWN",
-			"error":  "invalid health result",
-		})
+		if h.includeDiagnostics(c) {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "DOWN",
+				"error":  "invalid health result",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "DOWN",
+			})
+		}
 		return
 	}
 
-	c.JSON(result.code, result.res)
+	c.JSON(result.code, h.responseForContext(c, result.res))
+}
+
+func (h *HealthChecker) includeDiagnostics(c *gin.Context) bool {
+	if strings.EqualFold(strings.TrimSpace(h.env), "development") {
+		return true
+	}
+	if c != nil {
+		if _, exists := c.Get("user"); exists {
+			return true
+		}
+		if strings.TrimSpace(c.GetString("user_id")) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *HealthChecker) responseForContext(c *gin.Context, res HealthResponse) HealthResponse {
+	if h.includeDiagnostics(c) {
+		return res
+	}
+	return redactHealthResponse(res)
+}
+
+func redactHealthResponse(res HealthResponse) HealthResponse {
+	sanitized := HealthResponse{
+		Status:    res.Status,
+		Timestamp: res.Timestamp,
+	}
+	if len(res.Services) > 0 {
+		sanitized.Services = make(map[string]CheckStatus, len(res.Services))
+		for k, v := range res.Services {
+			sanitized.Services[k] = CheckStatus{
+				Status: v.Status,
+			}
+		}
+	}
+	return sanitized
 }

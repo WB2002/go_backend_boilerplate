@@ -2,6 +2,7 @@ package redis_test
 
 import (
 	"context"
+	"crypto/tls"
 	"testing"
 	"time"
 
@@ -47,4 +48,31 @@ func TestRedisNilHelpers(t *testing.T) {
 
 	err = redis.Close(nil)
 	assert.NoError(t, err)
+}
+
+func TestRedisClientTLSConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		client := redis.NewClient(config.RedisConfig{
+			Host: "localhost",
+			Port: 6379,
+		})
+		require.NotNil(t, client)
+		defer redis.Close(client)
+
+		assert.Nil(t, client.Options().TLSConfig)
+	})
+
+	t.Run("enabled when UseTLS is true", func(t *testing.T) {
+		client := redis.NewClient(config.RedisConfig{
+			Host:   "redis.internal",
+			Port:   6380,
+			UseTLS: true,
+		})
+		require.NotNil(t, client)
+		defer redis.Close(client)
+
+		tlsCfg := client.Options().TLSConfig
+		require.NotNil(t, tlsCfg)
+		assert.GreaterOrEqual(t, tlsCfg.MinVersion, uint16(tls.VersionTLS12))
+	})
 }

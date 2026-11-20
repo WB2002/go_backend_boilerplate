@@ -29,6 +29,7 @@ func TestHealthCheckCacheMitigatesThunderingHerd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	checker := telemetry.NewHealthChecker(telemetry.Config{
 		CacheTTL: 2 * time.Second,
+		Env:      "development",
 	})
 
 	router := gin.New()
@@ -43,6 +44,7 @@ func TestHealthCheckCacheMitigatesThunderingHerd(t *testing.T) {
 	err := json.Unmarshal(w1.Body.Bytes(), &res1)
 	require.NoError(t, err)
 	assert.Equal(t, "UP", res1.Status)
+	require.NotNil(t, res1.SystemStats)
 	assert.Greater(t, res1.SystemStats.Goroutines, 0)
 
 	// Immediate second call should return cached response with exact same timestamp

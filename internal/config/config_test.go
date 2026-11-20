@@ -50,7 +50,7 @@ func TestConfigLoadSuccess(t *testing.T) {
 	assert.Equal(t, 500, cfg.HTTP.ShutdownDrainMs)
 	assert.Equal(t, 1000, cfg.HTTP.ShutdownForceMs)
 	assert.Equal(t, 1024, cfg.HTTP.GzipMinSizeBytes)
-	assert.Equal(t, []string{"*"}, cfg.HTTP.AllowedOrigins)
+	assert.Empty(t, cfg.HTTP.AllowedOrigins)
 
 	// Auth defaults
 	assert.Equal(t, "dummy-private-key", cfg.Auth.JWTPrivateKey)
@@ -61,12 +61,14 @@ func TestConfigLoadSuccess(t *testing.T) {
 	// Database
 	assert.Equal(t, "localhost", cfg.Database.Host)
 	assert.Equal(t, 5432, cfg.Database.Port)
+	assert.Equal(t, "require", cfg.Database.SSLMode)
 	assert.Equal(t, 25, cfg.Database.MaxOpenConns)
 
 	// Redis
 	assert.Equal(t, "localhost", cfg.Redis.Host)
 	assert.Equal(t, 6379, cfg.Redis.Port)
 	assert.Equal(t, 50, cfg.Redis.PoolSize)
+	assert.False(t, cfg.Redis.UseTLS)
 
 	// Mongo
 	assert.Equal(t, "mongodb://localhost:27017/test", cfg.Mongo.URI)
@@ -191,4 +193,63 @@ func TestConfigAppDebugRouteFlags(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, cfg.App.EnableSwagger)
 	assert.True(t, cfg.App.EnablePlayground)
+}
+
+func TestConfigSecurityTransportAndOriginDefaults(t *testing.T) {
+	t.Run("development defaults postgres sslmode to disable", func(t *testing.T) {
+		setMinimalValidEnv()
+		unsetEnv("NODE_ENV")
+		setEnv("APP_ENV", "development")
+
+		cfg, err := config.Load()
+		require.NoError(t, err)
+		assert.Equal(t, "disable", cfg.Database.SSLMode)
+		assert.Empty(t, cfg.HTTP.AllowedOrigins)
+		assert.False(t, cfg.Redis.UseTLS)
+		assert.False(t, cfg.Telemetry.OTelExporterInsecure)
+	})
+
+	t.Run("unset env defaults to development and sslmode disable", func(t *testing.T) {
+		setMinimalValidEnv()
+		unsetEnv("NODE_ENV")
+		unsetEnv("APP_ENV")
+
+		cfg, err := config.Load()
+		require.NoError(t, err)
+		assert.Equal(t, "development", cfg.App.Env)
+		assert.Equal(t, "disable", cfg.Database.SSLMode)
+		assert.Empty(t, cfg.HTTP.AllowedOrigins)
+	})
+
+	t.Run("production defaults postgres sslmode to require and origins empty", func(t *testing.T) {
+		setMinimalValidEnv()
+		unsetEnv("NODE_ENV")
+		setEnv("APP_ENV", "production")
+
+		cfg, err := config.Load()
+		require.NoError(t, err)
+		assert.Equal(t, "require", cfg.Database.SSLMode)
+		assert.Empty(t, cfg.HTTP.AllowedOrigins)
+	})
+
+	t.Run("explicit postgres sslmode overrides env default", func(t *testing.T) {
+		setMinimalValidEnv()
+		setEnv("APP_ENV", "production")
+		setEnv("POSTGRES_SSLMODE", "disable")
+
+		cfg, err := config.Load()
+		require.NoError(t, err)
+		assert.Equal(t, "disable", cfg.Database.SSLMode)
+	})
+
+	t.Run("redis tls and otel insecure opt-in flags parse", func(t *testing.T) {
+		setMinimalValidEnv()
+		setEnv("REDIS_USE_TLS", "true")
+		setEnv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+
+		cfg, err := config.Load()
+		require.NoError(t, err)
+		assert.True(t, cfg.Redis.UseTLS)
+		assert.True(t, cfg.Telemetry.OTelExporterInsecure)
+	})
 }
