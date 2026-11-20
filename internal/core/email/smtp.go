@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"os"
 	"strings"
 	"time"
 )
@@ -166,6 +167,12 @@ func buildRawMessage(from, to, subject string, msg Message) []byte {
 func wrapContextErr(ctx context.Context, op string, err error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("%s: %w: %v", op, ctxErr, err)
+	}
+	if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
+		var netErr net.Error
+		if !time.Now().Before(deadline) || (errors.As(err, &netErr) && netErr.Timeout()) || errors.Is(err, os.ErrDeadlineExceeded) {
+			return fmt.Errorf("%s: %w: %v", op, context.DeadlineExceeded, err)
+		}
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }

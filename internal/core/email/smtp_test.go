@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ func TestSMTPMailer_HonorsContextCancellation(t *testing.T) {
 		BodyText: "Hello",
 	})
 	assert.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Contains(t, err.Error(), "context")
 }
 
@@ -65,8 +67,34 @@ func TestSMTPMailer_HonorsContextDeadlineDuringSession(t *testing.T) {
 	}
 
 	assert.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Contains(t, err.Error(), "context")
 	assert.Less(t, elapsed, time.Second)
+}
+
+func TestWrapContextErr_SocketTimeoutBeforeCtxFlipped(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Simulate net.Dialer / net.Conn returning a socket i/o timeout just before
+	// Go's context timer flips ctx.Err() from nil to context.DeadlineExceeded.
+	opErr := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
+
+	wrapped := wrapContextErr(ctx, "smtp dial", opErr)
+	require.Error(t, wrapped)
+	assert.ErrorIs(t, wrapped, context.DeadlineExceeded)
+	assert.Contains(t, wrapped.Error(), "context")
+	assert.Contains(t, wrapped.Error(), "i/o timeout")
+
+	// Without a context deadline, a network timeout should not be rewritten as context.DeadlineExceeded.
+	bgWrapped := wrapContextErr(context.Background(), "smtp dial", opErr)
+	require.Error(t, bgWrapped)
+	assert.NotErrorIs(t, bgWrapped, context.DeadlineExceeded)
+	assert.ErrorIs(t, bgWrapped, os.ErrDeadlineExceeded)
 }
 
 func TestSMTPMailer_StripsCRLFInHeadersAndSendsBody(t *testing.T) {
