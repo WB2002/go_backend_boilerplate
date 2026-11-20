@@ -17,10 +17,10 @@ func TestDebugRouteExposureControl(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name               string
-		appCfg             config.AppConfig
-		expectSwagger      int
-		expectPlayground   int
+		name             string
+		appCfg           config.AppConfig
+		expectSwagger    int
+		expectPlayground int
 	}{
 		{
 			name:             "production defaults block swagger and playground",
