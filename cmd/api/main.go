@@ -230,7 +230,11 @@ func main() {
 			cfg.RateLimit.DefaultLimit,
 			time.Duration(cfg.RateLimit.DefaultWindowSec)*time.Second,
 		),
-		middleware.Idempotency(rdb, 10*time.Minute),
+		middleware.IdempotencyWithConfig(rdb, 10*time.Minute, []string{
+			"/account/login",
+			"/account/refresh",
+			"/account/reset-password",
+		}),
 	)
 
 	// 10. Route Registration
