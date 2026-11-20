@@ -26,17 +26,29 @@ func GenerateCSRFToken(secret string) (string, error) {
 		return "", errors.New("csrf secret cannot be empty")
 	}
 
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	rawHex, err := randomCSRFHex()
+	if err != nil {
 		return "", err
 	}
-	rawHex := hex.EncodeToString(raw)
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(rawHex))
-	sigHex := hex.EncodeToString(mac.Sum(nil))
+	return rawHex + "." + signCSRFPayload(secret, rawHex), nil
+}
 
-	return rawHex + "." + sigHex, nil
+// GenerateBoundCSRFToken creates an HMAC-SHA256 signed CSRF token bound to a session or user identifier.
+func GenerateBoundCSRFToken(secret string, sessionID string) (string, error) {
+	if secret == "" {
+		return "", errors.New("csrf secret cannot be empty")
+	}
+	if sessionID == "" {
+		return "", errors.New("csrf session id cannot be empty")
+	}
+
+	rawHex, err := randomCSRFHex()
+	if err != nil {
+		return "", err
+	}
+
+	return rawHex + "." + signCSRFPayload(secret, sessionID+":"+rawHex), nil
 }
 
 // ValidateCSRFToken checks whether the given token string has a valid HMAC-SHA256 signature.
@@ -44,20 +56,44 @@ func ValidateCSRFToken(secret string, tokenStr string) bool {
 	if secret == "" || tokenStr == "" {
 		return false
 	}
+	return verifyCSRFToken(secret, tokenStr, func(rawHex string) string {
+		return rawHex
+	})
+}
 
+// ValidateBoundCSRFToken checks whether the given token string has a valid HMAC-SHA256 signature
+// bound to the specified session or user identifier.
+func ValidateBoundCSRFToken(secret string, sessionID string, tokenStr string) bool {
+	if secret == "" || sessionID == "" || tokenStr == "" {
+		return false
+	}
+	return verifyCSRFToken(secret, tokenStr, func(rawHex string) string {
+		return sessionID + ":" + rawHex
+	})
+}
+
+func randomCSRFHex() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func signCSRFPayload(secret string, payload string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func verifyCSRFToken(secret string, tokenStr string, payloadFn func(rawHex string) string) bool {
 	parts := strings.Split(tokenStr, ".")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return false
 	}
 
-	rawHex := parts[0]
-	sigHex := parts[1]
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(rawHex))
-	expectedSig := hex.EncodeToString(mac.Sum(nil))
-
-	return subtle.ConstantTimeCompare([]byte(sigHex), []byte(expectedSig)) == 1
+	expectedSig := signCSRFPayload(secret, payloadFn(parts[0]))
+	return subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expectedSig)) == 1
 }
 
 // CSRFMiddleware implements the Double-Submit Cookie CSRF pattern for mutative HTTP methods.

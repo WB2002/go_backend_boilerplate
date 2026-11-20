@@ -18,13 +18,18 @@ type Handler struct {
 	hub          *Hub
 	tokenManager auth.TokenManager
 	upgrader     websocket.Upgrader
+	env          string
 }
 
 // NewHandler constructs a WebSocket HTTP handler.
 func NewHandler(hub *Hub, tokenManager auth.TokenManager, allowedOrigins ...string) *Handler {
 	origins := allowedOrigins
-	if len(origins) == 0 && len(hub.config.AllowedOrigins) > 0 {
-		origins = hub.config.AllowedOrigins
+	env := ""
+	if hub != nil {
+		env = hub.config.Env
+		if len(origins) == 0 && len(hub.config.AllowedOrigins) > 0 {
+			origins = hub.config.AllowedOrigins
+		}
 	}
 
 	upgrader := websocket.Upgrader{
@@ -39,7 +44,13 @@ func NewHandler(hub *Hub, tokenManager auth.TokenManager, allowedOrigins ...stri
 		hub:          hub,
 		tokenManager: tokenManager,
 		upgrader:     upgrader,
+		env:          env,
 	}
+}
+
+// SetEnv sets the runtime environment name used to enforce production auth rules.
+func (h *Handler) SetEnv(env string) {
+	h.env = env
 }
 
 // SetUpgrader overrides the default Gorilla WebSocket upgrader.
@@ -59,11 +70,28 @@ func (h *Handler) RegisterRoutes(r gin.IRoutes, path ...string) {
 // HandleWebSocket handles the HTTP upgrade to WebSocket, validates authentication tokens,
 // and initiates the read/write pumps.
 func (h *Handler) HandleWebSocket(c *gin.Context) {
-	// 1. Authenticate user: prefer existing context user_id, then query param ?token=, then Authorization header
-	userID := c.GetString("user_id")
+	if h.tokenManager == nil {
+		log.Error().Msg("websocket handshake rejected: token manager is nil")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "authentication service unavailable"})
+		return
+	}
 
-	if userID == "" && h.tokenManager != nil {
-		tokenStr := extractToken(c)
+	isProduction := strings.EqualFold(strings.TrimSpace(h.env), "production")
+	if isProduction {
+		if _, hasQueryToken := c.GetQuery("token"); hasQueryToken {
+			log.Warn().Msg("websocket handshake rejected: query token disabled in production")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "query parameter authentication is disabled in production"})
+			return
+		}
+	}
+
+	// 1. Authenticate user: prefer existing context user_id, then Authorization/Sec-WebSocket-Protocol (or ?token= outside production)
+	userID := c.GetString("user_id")
+	var selectedSubprotocol string
+
+	if userID == "" {
+		var tokenStr string
+		tokenStr, selectedSubprotocol = extractToken(c, !isProduction)
 		if tokenStr == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authentication token"})
 			return
@@ -83,13 +111,15 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 		userID = claims.UserID
 	}
 
-	if userID == "" {
-		// Fallback for non-authenticated or dev modes
-		userID = c.DefaultQuery("user_id", "anonymous")
+	var responseHeader http.Header
+	if selectedSubprotocol != "" {
+		responseHeader = http.Header{
+			"Sec-WebSocket-Protocol": []string{selectedSubprotocol},
+		}
 	}
 
 	// 2. Upgrade HTTP connection to WebSocket
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, responseHeader)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to upgrade websocket connection")
 		return
@@ -113,22 +143,40 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 	client.ReadPump() // blocks until socket closure
 }
 
-// extractToken pulls the JWT from query param ?token= or Authorization: Bearer <token>.
-func extractToken(c *gin.Context) string {
-	if token := c.Query("token"); token != "" {
-		return token
-	}
-
-	authHeader := c.GetHeader("Authorization")
-	if authHeader != "" {
+// extractToken pulls the JWT from Authorization: Bearer, Sec-WebSocket-Protocol,
+// or (when allowQuery is true) query param ?token=.
+func extractToken(c *gin.Context, allowQuery bool) (string, string) {
+	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-			return strings.TrimSpace(parts[1])
+			if token := strings.TrimSpace(parts[1]); token != "" {
+				return token, ""
+			}
 		}
-		return strings.TrimSpace(authHeader)
 	}
 
-	return ""
+	if subprotocols := websocket.Subprotocols(c.Request); len(subprotocols) > 0 {
+		for i := 0; i < len(subprotocols)-1; i++ {
+			if strings.EqualFold(subprotocols[i], "bearer") || strings.EqualFold(subprotocols[i], "access_token") {
+				if token := strings.TrimSpace(subprotocols[i+1]); token != "" {
+					return token, subprotocols[i]
+				}
+			}
+		}
+		if len(subprotocols) == 1 {
+			if token := strings.TrimSpace(subprotocols[0]); token != "" {
+				return token, subprotocols[0]
+			}
+		}
+	}
+
+	if allowQuery {
+		if token := strings.TrimSpace(c.Query("token")); token != "" {
+			return token, ""
+		}
+	}
+
+	return "", ""
 }
 
 // checkOrigin validates the Origin header against the configured allowed list.

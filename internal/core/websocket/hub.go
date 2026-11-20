@@ -38,6 +38,7 @@ const (
 
 // Config configures the WebSocket hub and connection lifecycle.
 type Config struct {
+	Env                   string        `json:"env"`
 	MaxConnectionsPerUser int           `json:"max_connections_per_user"`
 	MessagesPerMinute     int           `json:"messages_per_minute"`
 	AllowedOrigins        []string      `json:"allowed_origins"`

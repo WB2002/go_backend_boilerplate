@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -347,11 +346,6 @@ func NewMemoryLedger() *MemoryLedger {
 	return &MemoryLedger{
 		jobs: make(map[string]*Job),
 	}
-}
-
-// NewTestLedger constructs a new in-memory test ledger.
-func NewTestLedger(t testing.TB) Ledger {
-	return NewMemoryLedger()
 }
 
 // Enqueue inserts a job into the in-memory ledger with deduplication protection.

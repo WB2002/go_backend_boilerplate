@@ -105,7 +105,6 @@ func TestConfigIndividualMissingRequiredFails(t *testing.T) {
 	requiredKeys := []string{
 		"JWT_PRIVATE_KEY",
 		"JWT_PUBLIC_KEY",
-		"COOKIE_SECRET",
 		"POSTGRES_HOST",
 		"POSTGRES_USER",
 		"POSTGRES_PASSWORD",
@@ -252,4 +251,13 @@ func TestConfigSecurityTransportAndOriginDefaults(t *testing.T) {
 		assert.True(t, cfg.Redis.UseTLS)
 		assert.True(t, cfg.Telemetry.OTelExporterInsecure)
 	})
+}
+
+func TestConfigCookieSecretOptional(t *testing.T) {
+	setMinimalValidEnv()
+	unsetEnv("COOKIE_SECRET")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Auth.CookieSecret)
 }

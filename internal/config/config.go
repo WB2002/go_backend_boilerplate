@@ -54,7 +54,7 @@ type HTTPConfig struct {
 type AuthConfig struct {
 	JWTPrivateKey        string `env:"JWT_PRIVATE_KEY" required:"true"`
 	JWTPublicKey         string `env:"JWT_PUBLIC_KEY" required:"true"`
-	CookieSecret         string `env:"COOKIE_SECRET" required:"true"`
+	CookieSecret         string `env:"COOKIE_SECRET"`
 	AccessTokenTTLSec    int    `env:"JWT_ACCESS_TOKEN_TTL_SEC" default:"900"`
 	RefreshTokenTTLSec   int    `env:"JWT_REFRESH_TOKEN_TTL_SEC" default:"604800"`
 	Argon2Memory         uint32 `env:"ARGON2_MEMORY" default:"65536"`

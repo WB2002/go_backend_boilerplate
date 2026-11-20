@@ -204,3 +204,30 @@ func TestCSRFTokenHelpers(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, middleware.ValidateCSRFToken(testCSRFSecret, token))
 }
+
+func TestCSRF_BoundToSession(t *testing.T) {
+	secret := "secret-key"
+	sessionA := "session-123"
+	sessionB := "session-456"
+
+	token, err := middleware.GenerateBoundCSRFToken(secret, sessionA)
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
+
+	assert.True(t, middleware.ValidateBoundCSRFToken(secret, sessionA, token))
+	assert.False(t, middleware.ValidateBoundCSRFToken(secret, sessionB, token))
+	assert.False(t, middleware.ValidateBoundCSRFToken("wrong-secret", sessionA, token))
+	assert.False(t, middleware.ValidateBoundCSRFToken(secret, "", token))
+	assert.False(t, middleware.ValidateBoundCSRFToken(secret, sessionA, ""))
+
+	// Unbound tokens must not pass bound validation
+	unbound, err := middleware.GenerateCSRFToken(secret)
+	require.NoError(t, err)
+	assert.False(t, middleware.ValidateBoundCSRFToken(secret, sessionA, unbound))
+
+	// Empty secret or empty sessionID must fail generation
+	_, err = middleware.GenerateBoundCSRFToken("", sessionA)
+	assert.Error(t, err)
+	_, err = middleware.GenerateBoundCSRFToken(secret, "")
+	assert.Error(t, err)
+}

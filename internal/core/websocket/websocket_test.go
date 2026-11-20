@@ -327,7 +327,7 @@ func TestWebSocketEndToEndMessageFlow(t *testing.T) {
 		receivedMu.Unlock()
 	})
 
-	handler := websocket.NewHandler(hub, nil, "*")
+	handler := websocket.NewHandler(hub, &mockTokenManager{}, "*")
 
 	router := gin.New()
 	router.GET("/realtime", handler.HandleWebSocket)
@@ -335,10 +335,12 @@ func TestWebSocketEndToEndMessageFlow(t *testing.T) {
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime?user_id=alice"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
 
 	dialer := gorilla.Dialer{}
-	conn, resp, err := dialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Authorization", "Bearer valid-token")
+	conn, resp, err := dialer.Dial(wsURL, header)
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
@@ -395,16 +397,18 @@ func TestInboundRateLimitDisconnect(t *testing.T) {
 	}, nil)
 	defer hub.Close()
 
-	handler := websocket.NewHandler(hub, nil, "*")
+	handler := websocket.NewHandler(hub, &mockTokenManager{}, "*")
 	router := gin.New()
 	router.GET("/realtime", handler.HandleWebSocket)
 
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime?user_id=spammer"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
 
-	conn, _, err := gorilla.DefaultDialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Authorization", "Bearer valid-token")
+	conn, _, err := gorilla.DefaultDialer.Dial(wsURL, header)
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -761,19 +765,20 @@ func TestCheckOriginDefaultFallback(t *testing.T) {
 	defer hub.Close()
 
 	// Handler with empty allowedOrigins -> falls back to same-origin
-	handler := websocket.NewHandler(hub, nil)
+	handler := websocket.NewHandler(hub, &mockTokenManager{})
 	router := gin.New()
 	handler.RegisterRoutes(router, "/realtime")
 
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime?user_id=alice"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
 	serverHost := strings.TrimPrefix(server.URL, "http://")
 
 	// 1. Same-origin request (origin host == server host) -> Allowed (101)
 	header := http.Header{}
 	header.Set("Origin", "http://"+serverHost)
+	header.Set("Authorization", "Bearer valid-token")
 	conn, resp, err := gorilla.DefaultDialer.Dial(wsURL, header)
 	require.NoError(t, err)
 	require.NotNil(t, conn)
@@ -783,6 +788,7 @@ func TestCheckOriginDefaultFallback(t *testing.T) {
 	// 2. Cross-origin request from different host -> Rejected with 403 Forbidden
 	header = http.Header{}
 	header.Set("Origin", "http://malicious-site.com")
+	header.Set("Authorization", "Bearer valid-token")
 	_, resp, err = gorilla.DefaultDialer.Dial(wsURL, header)
 	assert.Error(t, err)
 	if resp != nil {
@@ -829,15 +835,25 @@ func TestWritePumpFrameIsolation(t *testing.T) {
 	}, nil)
 	defer hub.Close()
 
-	handler := websocket.NewHandler(hub, nil, "*")
+	tm := &mockTokenManager{
+		validateFunc: func(ctx context.Context, token string) (*auth.Claims, error) {
+			if token == "alice-token" {
+				return &auth.Claims{UserID: "alice"}, nil
+			}
+			return nil, auth.ErrInvalidToken
+		},
+	}
+	handler := websocket.NewHandler(hub, tm, "*")
 	router := gin.New()
 	router.GET("/realtime", handler.HandleWebSocket)
 
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime?user_id=alice"
-	conn, resp, err := gorilla.DefaultDialer.Dial(wsURL, nil)
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
+	header := http.Header{}
+	header.Set("Authorization", "Bearer alice-token")
+	conn, resp, err := gorilla.DefaultDialer.Dial(wsURL, header)
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
@@ -861,4 +877,145 @@ func TestWritePumpFrameIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, gorilla.TextMessage, msgType2)
 	assert.Equal(t, `{"id":2}`, string(payload2))
+}
+
+func TestWebSocket_RejectsRawQueryTokenInProduction(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	hub := websocket.NewHub(websocket.Config{
+		Env:                   "production",
+		MaxConnectionsPerUser: 5,
+		MessagesPerMinute:     60,
+		AllowedOrigins:        []string{"https://example.com"},
+	}, nil)
+	defer hub.Close()
+
+	tm := &mockTokenManager{}
+	handler := websocket.NewHandler(hub, tm, "https://example.com")
+
+	router := gin.New()
+	handler.RegisterRoutes(router, "/realtime")
+
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
+	dialer := gorilla.Dialer{}
+
+	// 1. ?token= query param MUST be rejected with 401 in production
+	header := http.Header{}
+	header.Set("Origin", "https://example.com")
+	_, resp, err := dialer.Dial(wsURL+"?token=valid-token", header)
+	assert.Error(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// 2. ?token= query param WITH Authorization header is still rejected in production
+	header = http.Header{}
+	header.Set("Origin", "https://example.com")
+	header.Set("Authorization", "Bearer valid-token")
+	_, resp, err = dialer.Dial(wsURL+"?token=valid-token", header)
+	assert.Error(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// 3. Authorization: Bearer header without query param succeeds in production
+	header = http.Header{}
+	header.Set("Origin", "https://example.com")
+	header.Set("Authorization", "Bearer valid-token")
+	conn, resp, err := dialer.Dial(wsURL, header)
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	_ = conn.Close()
+}
+
+func TestWebSocket_SecWebSocketProtocolAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	hub := websocket.NewHub(websocket.Config{
+		Env:                   "production",
+		MaxConnectionsPerUser: 5,
+		MessagesPerMinute:     60,
+		AllowedOrigins:        []string{"https://example.com"},
+	}, nil)
+	defer hub.Close()
+
+	tm := &mockTokenManager{}
+	handler := websocket.NewHandler(hub, tm, "https://example.com")
+
+	router := gin.New()
+	handler.RegisterRoutes(router, "/realtime")
+
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
+
+	t.Run("bearer subprotocol pair succeeds and negotiates bearer", func(t *testing.T) {
+		dialer := gorilla.Dialer{
+			Subprotocols: []string{"bearer", "valid-token"},
+		}
+		header := http.Header{}
+		header.Set("Origin", "https://example.com")
+		conn, resp, err := dialer.Dial(wsURL, header)
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		assert.Equal(t, "bearer", resp.Header.Get("Sec-WebSocket-Protocol"))
+		_ = conn.Close()
+	})
+
+	t.Run("single token subprotocol succeeds", func(t *testing.T) {
+		dialer := gorilla.Dialer{
+			Subprotocols: []string{"valid-token"},
+		}
+		header := http.Header{}
+		header.Set("Origin", "https://example.com")
+		conn, resp, err := dialer.Dial(wsURL, header)
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+		assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		_ = conn.Close()
+	})
+
+	t.Run("invalid subprotocol token fails with 401", func(t *testing.T) {
+		dialer := gorilla.Dialer{
+			Subprotocols: []string{"bearer", "bad-token"},
+		}
+		header := http.Header{}
+		header.Set("Origin", "https://example.com")
+		_, resp, err := dialer.Dial(wsURL, header)
+		assert.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		_ = resp.Body.Close()
+	})
+}
+
+func TestWebSocket_FailsClosedWhenTokenManagerNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	hub := websocket.NewHub(websocket.Config{
+		MaxConnectionsPerUser: 5,
+		MessagesPerMinute:     60,
+		AllowedOrigins:        []string{"*"},
+	}, nil)
+	defer hub.Close()
+
+	handler := websocket.NewHandler(hub, nil, "*")
+	router := gin.New()
+	handler.RegisterRoutes(router, "/realtime")
+
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	// Fails closed even if ?user_id= is provided
+	resp, err := http.Get(server.URL + "/realtime?user_id=attacker")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.NotEqual(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }

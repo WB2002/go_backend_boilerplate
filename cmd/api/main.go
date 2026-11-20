@@ -167,6 +167,7 @@ func main() {
 	}()
 
 	wsHub := websocket.NewHub(websocket.Config{
+		Env:                   cfg.App.Env,
 		MaxConnectionsPerUser: cfg.WebSocket.MaxConnectionsPerUser,
 		MessagesPerMinute:     cfg.WebSocket.MessagesPerMinute,
 		AllowedOrigins:        cfg.HTTP.AllowedOrigins,
