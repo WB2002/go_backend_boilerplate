@@ -68,7 +68,9 @@ func (s *service) processEntry(entry Entry) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = s.Log(ctx, entry)
+	if err := s.Log(ctx, entry); err != nil {
+		logger.Default().Error().Err(err).Str("action", entry.Action).Str("target_id", entry.TargetID).Msg("failed to persist audit log record to database")
+	}
 }
 
 // ScrubMap recursively redacts sensitive information like passwords and tokens.

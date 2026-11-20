@@ -2,6 +2,8 @@ package auth_test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,4 +69,76 @@ func TestTokenValidationRejectsEmptyJTI(t *testing.T) {
 
 	_, err = mgr.ValidateRefreshToken(ctx, refreshNoJTI)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+}
+
+func TestRevokeTokenOnceAtomicity(t *testing.T) {
+	privPEM, pubPEM := generateTestRSAKeys()
+	ctx := context.Background()
+
+	t.Run("in-memory atomic revocation", func(t *testing.T) {
+		mgr, err := auth.NewJWTTokenManager(privPEM, pubPEM, 15*time.Minute, 7*24*time.Hour, nil)
+		require.NoError(t, err)
+
+		pair, err := mgr.GenerateTokenPair("user-inmem", []string{"user"})
+		require.NoError(t, err)
+
+		const workers = 16
+		var won atomic.Int32
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				ok, revErr := mgr.RevokeTokenOnce(ctx, pair.RefreshJTI, time.Hour)
+				assert.NoError(t, revErr)
+				if ok {
+					won.Add(1)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		assert.Equal(t, int32(1), won.Load())
+
+		_, err = mgr.ValidateRefreshToken(ctx, pair.RefreshToken)
+		assert.ErrorIs(t, err, auth.ErrTokenRevoked)
+	})
+
+	t.Run("redis atomic revocation", func(t *testing.T) {
+		client, cleanup := startMockRedis(t)
+		defer cleanup()
+
+		mgr, err := auth.NewJWTTokenManager(privPEM, pubPEM, 15*time.Minute, 7*24*time.Hour, client)
+		require.NoError(t, err)
+
+		pair, err := mgr.GenerateTokenPair("user-redis", []string{"user"})
+		require.NoError(t, err)
+
+		const workers = 16
+		var won atomic.Int32
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				ok, revErr := mgr.RevokeTokenOnce(ctx, pair.RefreshJTI, time.Hour)
+				assert.NoError(t, revErr)
+				if ok {
+					won.Add(1)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		assert.Equal(t, int32(1), won.Load())
+
+		_, err = mgr.ValidateRefreshToken(ctx, pair.RefreshToken)
+		assert.ErrorIs(t, err, auth.ErrTokenRevoked)
+	})
 }

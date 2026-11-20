@@ -680,6 +680,13 @@ func (m *failingRevokeTokenManager) RevokeToken(ctx context.Context, jti string,
 	return m.revokeErr
 }
 
+func (m *failingRevokeTokenManager) RevokeTokenOnce(ctx context.Context, tokenID string, ttl time.Duration) (bool, error) {
+	if m.revokeErr != nil {
+		return false, m.revokeErr
+	}
+	return true, nil
+}
+
 func (m *failingRevokeTokenManager) GenerateTokenPair(userID string, roles []string) (*auth.TokenPair, error) {
 	return &auth.TokenPair{
 		AccessToken:  "should-not-be-issued",
@@ -788,4 +795,71 @@ func TestAccount_ForgotPasswordRendersEmailBody(t *testing.T) {
 	assert.NotEmpty(t, msg.BodyHTML)
 	assert.Contains(t, msg.BodyText, token)
 	assert.Contains(t, msg.BodyHTML, token)
+}
+
+func TestAccount_ConcurrentRefreshAtomicity(t *testing.T) {
+	router := account.SetupTestRouter(t)
+
+	regPayload := map[string]string{
+		"email":    "concurrent-refresh@example.com",
+		"password": "Password123!@#",
+	}
+	body, _ := json.Marshal(regPayload)
+
+	wReg := httptest.NewRecorder()
+	reqReg, _ := http.NewRequest(http.MethodPost, "/account/register", bytes.NewReader(body))
+	reqReg.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wReg, reqReg)
+	require.Equal(t, http.StatusCreated, wReg.Code)
+
+	wLogin := httptest.NewRecorder()
+	reqLogin, _ := http.NewRequest(http.MethodPost, "/account/login", bytes.NewReader(body))
+	reqLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wLogin, reqLogin)
+	require.Equal(t, http.StatusOK, wLogin.Code)
+
+	var loginResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(wLogin.Body.Bytes(), &loginResp))
+	refreshToken, ok := loginResp["refreshToken"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, refreshToken)
+
+	refBody, _ := json.Marshal(map[string]string{
+		"refreshToken": refreshToken,
+	})
+
+	const concurrency = 10
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	codes := make([]int, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(http.MethodPost, "/account/refresh", bytes.NewReader(refBody))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			codes[idx] = w.Code
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	successCount := 0
+	unauthorizedCount := 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusOK:
+			successCount++
+		case http.StatusUnauthorized:
+			unauthorizedCount++
+		}
+	}
+
+	assert.Equal(t, 1, successCount, "expected exactly 1 concurrent refresh to succeed with 200, got codes=%v", codes)
+	assert.Equal(t, concurrency-1, unauthorizedCount, "expected all other concurrent refreshes to fail with 401, got codes=%v", codes)
 }

@@ -27,10 +27,12 @@ const (
 	maxIdempotencyBodyBytes = 10 << 20 // 10 MiB
 )
 
-// DefaultIdempotencyExemptPaths lists credential-issuing and reset routes that must never be cached.
+// DefaultIdempotencyExemptPaths lists credential-issuing, registration, and reset routes that must never be cached.
 var DefaultIdempotencyExemptPaths = []string{
+	"/account/register",
 	"/account/login",
 	"/account/refresh",
+	"/account/forgot-password",
 	"/account/reset-password",
 }
 

@@ -268,7 +268,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 	}
 
 	if user.PasswordChangedAt != nil {
-		if claims.IssuedAt == nil || claims.IssuedAt.Time.Before(*user.PasswordChangedAt) {
+		if claims.IssuedAt == nil || !claims.IssuedAt.Time.After(*user.PasswordChangedAt) {
 			problem.Respond(c, http.StatusUnauthorized, "TOKEN_INVALIDATED", "Unauthorized", "Refresh token invalidated due to password change.")
 			return
 		}
@@ -286,8 +286,13 @@ func (h *Handler) Refresh(c *gin.Context) {
 	if remainingTTL <= 0 {
 		remainingTTL = 24 * time.Hour
 	}
-	if err := h.tokenManager.RevokeToken(c.Request.Context(), claims.ID, remainingTTL); err != nil {
+	revoked, err := h.tokenManager.RevokeTokenOnce(c.Request.Context(), claims.ID, remainingTTL)
+	if err != nil {
 		problem.Respond(c, http.StatusServiceUnavailable, "TOKEN_REVOCATION_FAILED", "Service Unavailable", "Failed to revoke refresh token.")
+		return
+	}
+	if !revoked {
+		problem.Respond(c, http.StatusUnauthorized, "REFRESH_TOKEN_REPLAY", "Unauthorized", "Refresh token has already been consumed.")
 		return
 	}
 

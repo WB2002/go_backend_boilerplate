@@ -51,6 +51,10 @@ func (m *mockTokenManager) RevokeToken(ctx context.Context, jti string, ttl time
 	return nil
 }
 
+func (m *mockTokenManager) RevokeTokenOnce(ctx context.Context, tokenID string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+
 func TestWebSocketUserConnectionLimit(t *testing.T) {
 	hub := websocket.NewHub(websocket.Config{
 		MaxConnectionsPerUser: 2,

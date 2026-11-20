@@ -66,6 +66,7 @@ type TokenManager interface {
 	ValidateAccessToken(ctx context.Context, tokenStr string) (*Claims, error)
 	ValidateRefreshToken(ctx context.Context, tokenStr string) (*Claims, error)
 	RevokeToken(ctx context.Context, jti string, ttl time.Duration) error
+	RevokeTokenOnce(ctx context.Context, tokenID string, ttl time.Duration) (bool, error)
 }
 
 // JWTTokenManager implements RS256 token issuance and verification with Redis revocation checking.
@@ -256,4 +257,29 @@ func (m *JWTTokenManager) RevokeToken(ctx context.Context, jti string, ttl time.
 		return fmt.Errorf("failed to record token revocation in redis: %w", err)
 	}
 	return nil
+}
+
+// RevokeTokenOnce atomically marks a JTI as revoked if it has not already been revoked.
+// Returns true if this call newly revoked the token, or false if it was already revoked.
+func (m *JWTTokenManager) RevokeTokenOnce(ctx context.Context, tokenID string, ttl time.Duration) (bool, error) {
+	if tokenID == "" {
+		return false, errors.New("jti cannot be empty")
+	}
+	if ttl <= 0 {
+		ttl = m.refreshTTL
+	}
+
+	if m.redisClient == nil {
+		if _, loaded := m.inMemRevoked.LoadOrStore(tokenID, time.Now().Add(ttl)); loaded {
+			return false, nil
+		}
+		return true, nil
+	}
+
+	key := RevokedJTIPrefix + tokenID
+	revoked, err := m.redisClient.SetNX(ctx, key, "1", ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to record atomic token revocation in redis: %w", err)
+	}
+	return revoked, nil
 }

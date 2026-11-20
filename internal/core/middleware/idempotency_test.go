@@ -369,3 +369,47 @@ func TestIdempotency_AuthorizationHeaderScopingAndFailureLeaseRelease(t *testing
 	assert.Equal(t, http.StatusUnauthorized, w401Retry.Code)
 	assert.Empty(t, w401Retry.Header().Get("X-Cache-Lookup"))
 }
+
+func TestIdempotency_DefaultExemptPathsIncludesAnonymousAccountRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := newMockIdempotencyRedis()
+
+	router := gin.New()
+	router.Use(Idempotency(client, time.Minute))
+
+	var regCount, forgotCount int64
+	router.POST("/account/register", func(c *gin.Context) {
+		n := atomic.AddInt64(&regCount, 1)
+		c.JSON(http.StatusCreated, gin.H{"seq": n})
+	})
+	router.POST("/account/forgot-password", func(c *gin.Context) {
+		n := atomic.AddInt64(&forgotCount, 1)
+		c.JSON(http.StatusOK, gin.H{"seq": n})
+	})
+
+	for _, tc := range []struct {
+		path       string
+		statusCode int
+	}{
+		{"/account/register", http.StatusCreated},
+		{"/account/forgot-password", http.StatusOK},
+	} {
+		w1 := performRequest(router, http.MethodPost, tc.path, `{"email":"a@example.com"}`, map[string]string{
+			"Idempotency-Key": "shared-nat-key",
+		})
+		assert.Equal(t, tc.statusCode, w1.Code)
+		assert.Empty(t, w1.Header().Get("X-Cache-Lookup"))
+
+		w2 := performRequest(router, http.MethodPost, tc.path, `{"email":"b@example.com"}`, map[string]string{
+			"Idempotency-Key": "shared-nat-key",
+		})
+		assert.Equal(t, tc.statusCode, w2.Code)
+		assert.Empty(t, w2.Header().Get("X-Cache-Lookup"))
+	}
+
+	assert.Equal(t, int64(2), atomic.LoadInt64(&regCount))
+	assert.Equal(t, int64(2), atomic.LoadInt64(&forgotCount))
+	client.mu.Lock()
+	assert.Empty(t, client.data)
+	client.mu.Unlock()
+}

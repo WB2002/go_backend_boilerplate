@@ -84,6 +84,9 @@ func main() {
 	var db *gorm.DB
 	db, err = database.Connect(cfg.Database)
 	if err != nil {
+		if cfg.App.Env != "development" {
+			log.Fatal().Err(err).Msg("failed to connect to PostgreSQL database in non-development environment")
+		}
 		log.Warn().Err(err).Msg("PostgreSQL database unavailable; proceeding with degraded database operations")
 	} else {
 		defer func() {
@@ -237,11 +240,7 @@ func main() {
 			cfg.RateLimit.DefaultLimit,
 			time.Duration(cfg.RateLimit.DefaultWindowSec)*time.Second,
 		),
-		middleware.IdempotencyWithConfig(rdb, 10*time.Minute, []string{
-			"/account/login",
-			"/account/refresh",
-			"/account/reset-password",
-		}),
+		middleware.Idempotency(rdb, 10*time.Minute),
 	)
 
 	// 10. Route Registration

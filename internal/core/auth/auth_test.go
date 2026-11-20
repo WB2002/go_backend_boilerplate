@@ -72,12 +72,24 @@ func handleMockRedisConn(c net.Conn, store map[string]string, mu *sync.Mutex) {
 		case "CLIENT":
 			_, _ = c.Write([]byte("+OK\r\n"))
 		case "SET":
+			hasNX := false
+			for _, a := range args[3:] {
+				if strings.EqualFold(a, "NX") {
+					hasNX = true
+					break
+				}
+			}
 			mu.Lock()
+			reply := "+OK\r\n"
 			if len(args) >= 3 {
-				store[args[1]] = args[2]
+				if _, exists := store[args[1]]; hasNX && exists {
+					reply = "$-1\r\n"
+				} else {
+					store[args[1]] = args[2]
+				}
 			}
 			mu.Unlock()
-			_, _ = c.Write([]byte("+OK\r\n"))
+			_, _ = c.Write([]byte(reply))
 		case "EXISTS":
 			mu.Lock()
 			count := 0
