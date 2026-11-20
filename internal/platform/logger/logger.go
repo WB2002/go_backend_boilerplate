@@ -14,7 +14,10 @@ import (
 var (
 	emailRegex        = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
 	bearerRegex       = regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9\-._~+/]+=*`)
+	basicAuthRegex    = regexp.MustCompile(`(?i)Basic\s+[A-Za-z0-9+/=]+`)
+	dsnRegex          = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:/\s"'@]*:)([^@/\s"']+)(@)`)
 	passwordJSONRegex = regexp.MustCompile(`(?i)("(?i:password|pass|secret|token|apiKey|api_key|access_token|refresh_token|authorization)"\s*:\s*")[^"]*(")`)
+	passwordHashRegex = regexp.MustCompile(`(?i)("password_hash"\s*:\s*")[^"]*(")`)
 	passwordRawRegex  = regexp.MustCompile(`(?i)\b(password|pass|secret|token|apiKey|api_key|access_token|refresh_token|authorization)=([^"'\s&]+)`)
 
 	defaultLoggerOnce sync.Once
@@ -41,11 +44,14 @@ func (mw *MaskingWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// MaskPII replaces sensitive patterns (emails, bearer tokens, passwords) with redacted placeholders.
+// MaskPII replaces sensitive patterns (emails, bearer/basic tokens, DSN passwords, passwords) with redacted placeholders.
 func MaskPII(s string) string {
 	res := bearerRegex.ReplaceAllString(s, "Bearer [REDACTED_TOKEN]")
+	res = basicAuthRegex.ReplaceAllString(res, "Basic [REDACTED]")
+	res = dsnRegex.ReplaceAllString(res, "${1}[REDACTED]${3}")
 	res = emailRegex.ReplaceAllString(res, "[REDACTED_EMAIL]")
 	res = passwordJSONRegex.ReplaceAllString(res, "${1}[REDACTED]${2}")
+	res = passwordHashRegex.ReplaceAllString(res, "${1}[REDACTED]${2}")
 	res = passwordRawRegex.ReplaceAllString(res, "${1}=[REDACTED]")
 	return res
 }

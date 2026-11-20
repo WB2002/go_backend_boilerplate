@@ -2,8 +2,10 @@ package audit
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,4 +100,95 @@ func TestAuditLogAsyncDrain(t *testing.T) {
 		db.Model(&LogRecord{}).Where("actor_id = ?", "usr-async-1").Count(&count)
 		return count == 1
 	}, 1*time.Second, 20*time.Millisecond)
+}
+
+func TestAuditService_NilDBNoPanic(t *testing.T) {
+	svc := NewService(nil, Config{BufferSize: 10})
+	defer svc.Close()
+
+	// Should not panic on Log or LogAsync
+	assert.NotPanics(t, func() {
+		err := svc.Log(context.Background(), Entry{
+			Action:    "test.action",
+			TargetID:  "oversized-target-id-exceeding-standard-length-bounds-abcdefghijklmnopqrstuvwxyz1234567890",
+			IPAddress: strings.Repeat("192.168.1.1,", 10),
+		})
+		assert.NoError(t, err)
+		svc.LogAsync(Entry{Action: "async.test"})
+	})
+}
+
+func TestAuditService_InputBoundingTruncation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db, Config{BufferSize: 10})
+	defer svc.Close()
+
+	// Multi-byte UTF-8 runes exceeding 64 and 45 runes respectively
+	oversizedTargetID := strings.Repeat("ü", 80)
+	oversizedIP := strings.Repeat("é", 60)
+
+	err := svc.Log(context.Background(), Entry{
+		ActorID:    "usr-bound-1",
+		Action:     "resource.update",
+		TargetType: "document",
+		TargetID:   oversizedTargetID,
+		IPAddress:  oversizedIP,
+	})
+	require.NoError(t, err)
+
+	var record LogRecord
+	err = db.First(&record, "actor_id = ?", "usr-bound-1").Error
+	require.NoError(t, err)
+
+	assert.Equal(t, 64, utf8.RuneCountInString(record.TargetID))
+	assert.True(t, utf8.ValidString(record.TargetID))
+	assert.Equal(t, 45, utf8.RuneCountInString(record.IPAddress))
+	assert.True(t, utf8.ValidString(record.IPAddress))
+}
+
+func TestAuditService_WorkerPanicRecovery(t *testing.T) {
+	// Uninitialized *gorm.DB is non-nil but panics inside WithContext/Create.
+	brokenDB := &gorm.DB{}
+	svc := NewService(brokenDB, Config{BufferSize: 4})
+
+	svc.LogAsync(Entry{
+		ActorID: "usr-panic-1",
+		Action:  "panic.test",
+	})
+	svc.LogAsync(Entry{
+		ActorID: "usr-panic-2",
+		Action:  "panic.test.after",
+	})
+
+	// Close must complete cleanly without hanging if the worker recovered properly.
+	done := make(chan struct{})
+	go func() {
+		_ = svc.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() timed out; worker goroutine may not have recovered cleanly")
+	}
+}
+
+func TestAuditService_LogAsyncFullQueueDoesNotBlock(t *testing.T) {
+	svc := NewService(nil, Config{BufferSize: 1})
+	defer svc.Close()
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			svc.LogAsync(Entry{Action: "queue.overflow.test"})
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("LogAsync blocked when queue was full")
+	}
 }

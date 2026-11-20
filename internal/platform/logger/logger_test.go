@@ -61,3 +61,14 @@ func TestMaskQueryParameters(t *testing.T) {
 	assert.NotContains(t, masked, "refresh000")
 	assert.NotContains(t, masked, "p123")
 }
+
+func TestLogger_MaskPII_ExtendedPatterns(t *testing.T) {
+	assert.Equal(t, "Basic [REDACTED]", logger.MaskPII("Basic dXNlcjpwYXNz"))
+	assert.Equal(t, "Authorization: Basic [REDACTED]", logger.MaskPII("Authorization: basic YWJjOjEyMw=="))
+	assert.Equal(t, `"password_hash":"[REDACTED]"`, logger.MaskPII(`"password_hash":"$argon2id$v=19$..."`))
+	assert.Equal(t, `"password_hash": "[REDACTED]"`, logger.MaskPII(`"password_hash": "$2a$10$hashvalue"`))
+	assert.Equal(t, "postgres://user:[REDACTED]@postgres:5432/db", logger.MaskPII("postgres://user:supersecret@postgres:5432/db"))
+	assert.Equal(t, "postgres://user:[REDACTED]@db.internal.local:5432/db", logger.MaskPII("postgres://user:supersecret@db.internal.local:5432/db"))
+	assert.Equal(t, "primary=postgres://u1:[REDACTED]@db1:5432/a replica=redis://:[REDACTED]@redis:6379/0", logger.MaskPII("primary=postgres://u1:p1@db1:5432/a replica=redis://:p2@redis:6379/0"))
+	assert.Equal(t, "https://example.com:8080/path and postgres://u:[REDACTED]@postgres:5432/db", logger.MaskPII("https://example.com:8080/path and postgres://u:p@postgres:5432/db"))
+}

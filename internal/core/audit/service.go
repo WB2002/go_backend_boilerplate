@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"go_backend_boilerplate/internal/platform/logger"
 	"gorm.io/gorm"
 )
 
@@ -47,13 +49,26 @@ func NewService(db *gorm.DB, cfg Config) Service {
 	go func() {
 		defer s.wg.Done()
 		for entry := range s.queue {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = s.Log(ctx, entry)
-			cancel()
+			s.processEntry(entry)
 		}
 	}()
 
 	return s
+}
+
+func (s *service) processEntry(entry Entry) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Default().Error().
+				Str("panic", fmt.Sprintf("%v", r)).
+				Bytes("stack", debug.Stack()).
+				Msg("audit worker recovered from panic")
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.Log(ctx, entry)
 }
 
 // ScrubMap recursively redacts sensitive information like passwords and tokens.
@@ -109,6 +124,10 @@ func isSensitiveKey(k string) bool {
 
 // Log writes an audit log entry synchronously.
 func (s *service) Log(ctx context.Context, entry Entry) error {
+	if s.db == nil {
+		return nil
+	}
+
 	scrubbed := ScrubMap(entry.Changes)
 	var changesBytes []byte
 	if scrubbed != nil {
@@ -130,8 +149,8 @@ func (s *service) Log(ctx context.Context, entry Entry) error {
 		ActorEmail:   entry.ActorEmail,
 		Action:       entry.Action,
 		TargetType:   entry.TargetType,
-		TargetID:     entry.TargetID,
-		IPAddress:    entry.IPAddress,
+		TargetID:     truncateRunes(entry.TargetID, 64),
+		IPAddress:    truncateRunes(entry.IPAddress, 45),
 		UserAgent:    entry.UserAgent,
 		Status:       status,
 		ErrorMessage: entry.ErrorMessage,
@@ -142,12 +161,30 @@ func (s *service) Log(ctx context.Context, entry Entry) error {
 	return s.db.WithContext(ctx).Create(record).Error
 }
 
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	if len(s) <= maxRunes {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes])
+}
+
 // LogAsync queues an audit log record without blocking request execution.
 func (s *service) LogAsync(entry Entry) {
 	select {
 	case s.queue <- entry:
 	default:
 		// Queue full: fail-open to never block client request
+		logger.Default().Warn().
+			Str("action", entry.Action).
+			Int("queue_capacity", cap(s.queue)).
+			Msg("audit log queue full, dropping entry")
 	}
 }
 
