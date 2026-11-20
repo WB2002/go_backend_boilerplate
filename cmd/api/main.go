@@ -210,6 +210,9 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := gin.New()
+	if err := router.SetTrustedProxies(cfg.HTTP.TrustedProxies); err != nil {
+		log.Fatal().Err(err).Msg("failed to configure trusted proxies")
+	}
 
 	router.Use(
 		middleware.RequestID(),

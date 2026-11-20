@@ -316,8 +316,20 @@ func (m *Manager) ShouldShed(p Priority) bool {
 	}
 }
 
-// ExtractPriority extracts the Priority from Gin context, headers, route registration, or default.
+// ExtractPriority extracts the Priority using the provided Manager (which may be nil).
+func ExtractPriority(c *gin.Context, m *Manager) Priority {
+	return m.ExtractPriority(c)
+}
+
+// ExtractPriority extracts the Priority from Gin context, route registration, or default.
 func (m *Manager) ExtractPriority(c *gin.Context) Priority {
+	if c == nil {
+		if m != nil && m.config.DefaultPriority != "" {
+			return m.config.DefaultPriority
+		}
+		return PriorityNormal
+	}
+
 	// 1. Gin context key: c.Get("api_priority") or c.Get("priority")
 	for _, key := range []string{"api_priority", "priority"} {
 		if val, exists := c.Get(key); exists {
@@ -330,40 +342,36 @@ func (m *Manager) ExtractPriority(c *gin.Context) Priority {
 		}
 	}
 
-	// 2. Request headers: X-API-Priority, X-Priority
-	if h := c.GetHeader("X-API-Priority"); h != "" {
-		return ParsePriority(h)
-	}
-	if h := c.GetHeader("X-Priority"); h != "" {
-		return ParsePriority(h)
-	}
-
-	// 3. Registered route path mapping
+	// 2. Registered route path mapping
 	if m != nil {
 		m.mu.RLock()
 		if p, ok := m.routePriorities[c.FullPath()]; ok {
 			m.mu.RUnlock()
 			return p
 		}
-		if p, ok := m.routePriorities[c.Request.URL.Path]; ok {
-			m.mu.RUnlock()
-			return p
+		if c.Request != nil && c.Request.URL != nil {
+			if p, ok := m.routePriorities[c.Request.URL.Path]; ok {
+				m.mu.RUnlock()
+				return p
+			}
 		}
 		m.mu.RUnlock()
 	}
 
-	// 4. Exact path segment check (e.g. "/low", "/critical", "/high") without loose substring matching
-	trimmed := strings.Trim(strings.ToLower(c.Request.URL.Path), "/")
-	switch trimmed {
-	case "low":
-		return PriorityLow
-	case "critical":
-		return PriorityCritical
-	case "high":
-		return PriorityHigh
+	// 3. Exact path segment check (e.g. "/low", "/critical", "/high") without loose substring matching
+	if c.Request != nil && c.Request.URL != nil {
+		trimmed := strings.Trim(strings.ToLower(c.Request.URL.Path), "/")
+		switch trimmed {
+		case "low":
+			return PriorityLow
+		case "critical":
+			return PriorityCritical
+		case "high":
+			return PriorityHigh
+		}
 	}
 
-	// 5. Default priority
+	// 4. Default priority
 	if m != nil && m.config.DefaultPriority != "" {
 		return m.config.DefaultPriority
 	}

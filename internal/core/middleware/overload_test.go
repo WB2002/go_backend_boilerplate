@@ -131,27 +131,35 @@ func TestInboundOverloadHeaderPriority(t *testing.T) {
 		c.String(http.StatusOK, "items")
 	})
 
-	// Fill to 80%
+	// Fill to 80% (8/10): PriorityNormal (threshold 90%) is NOT shed
 	for i := 0; i < 8; i++ {
 		mgr.Acquire()
 	}
 	defer func() {
-		for i := 0; i < 8; i++ {
+		for i := 0; i < 9; i++ {
 			mgr.Release()
 		}
 	}()
 
-	// Request with X-API-Priority: low should be shed
+	// Untrusted X-API-Priority: low header must be ignored (treated as PriorityNormal, passes at 80%)
 	wLow := httptest.NewRecorder()
 	reqLow, _ := http.NewRequest(http.MethodGet, "/items", nil)
 	reqLow.Header.Set("X-API-Priority", "low")
 	router.ServeHTTP(wLow, reqLow)
-	assert.Equal(t, http.StatusServiceUnavailable, wLow.Code)
+	assert.Equal(t, http.StatusOK, wLow.Code)
 
-	// Request with X-API-Priority: critical should succeed
+	// Fill to 90% (9/10): PriorityNormal is shed, and forged critical headers must NOT bypass shedding
+	mgr.Acquire()
+
 	wCrit := httptest.NewRecorder()
 	reqCrit, _ := http.NewRequest(http.MethodGet, "/items", nil)
 	reqCrit.Header.Set("X-API-Priority", "critical")
 	router.ServeHTTP(wCrit, reqCrit)
-	assert.Equal(t, http.StatusOK, wCrit.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, wCrit.Code)
+
+	wCrit2 := httptest.NewRecorder()
+	reqCrit2, _ := http.NewRequest(http.MethodGet, "/items", nil)
+	reqCrit2.Header.Set("X-Priority", "critical")
+	router.ServeHTTP(wCrit2, reqCrit2)
+	assert.Equal(t, http.StatusServiceUnavailable, wCrit2.Code)
 }

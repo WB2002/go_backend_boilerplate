@@ -45,6 +45,7 @@ type HTTPConfig struct {
 	ShutdownForceMs     int      `env:"HTTP_SHUTDOWN_FORCE_MS" default:"1000"`
 	GzipMinSizeBytes    int      `env:"HTTP_GZIP_MIN_SIZE_BYTES" default:"1024"`
 	AllowedOrigins      []string `env:"HTTP_ALLOWED_ORIGINS" default:"*"`
+	TrustedProxies      []string `env:"HTTP_TRUSTED_PROXIES" default:""`
 }
 
 // AuthConfig contains JWT RS256 keys, cookie secrets, and Argon2id bulkhead parameters.

@@ -170,10 +170,12 @@ func TestConfigDefaultsWhenOptionalUnset(t *testing.T) {
 func TestConfigSliceParsing(t *testing.T) {
 	setMinimalValidEnv()
 	setEnv("HTTP_ALLOWED_ORIGINS", "https://example.com, https://app.example.com")
+	setEnv("HTTP_TRUSTED_PROXIES", "10.0.0.0/8, 172.16.0.1")
 	setEnv("GEOIP_ALLOWED_COUNTRIES", "US, CA, GB")
 
 	cfg, err := config.Load()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"https://example.com", "https://app.example.com"}, cfg.HTTP.AllowedOrigins)
+	assert.Equal(t, []string{"10.0.0.0/8", "172.16.0.1"}, cfg.HTTP.TrustedProxies)
 	assert.Equal(t, []string{"US", "CA", "GB"}, cfg.Security.GeoIPAllowedCountries)
 }

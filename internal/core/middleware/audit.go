@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"strings"
+	"net"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,26 +26,17 @@ func AuditContext() gin.HandlerFunc {
 	}
 }
 
-// ExtractClientIP retrieves the client's IP from proxy headers or falls back to gin.ClientIP().
+// ExtractClientIP retrieves the client's IP via Gin's trusted-proxy-aware ClientIP()
+// and validates it with net.ParseIP, falling back to "127.0.0.1" if invalid.
 func ExtractClientIP(c *gin.Context) string {
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
+	if c == nil || c.Request == nil {
+		return "127.0.0.1"
 	}
-
-	if xri := c.GetHeader("X-Real-IP"); xri != "" {
-		ip := strings.TrimSpace(xri)
-		if ip != "" {
-			return ip
-		}
+	ipStr := c.ClientIP()
+	if ip := net.ParseIP(ipStr); ip != nil {
+		return ip.String()
 	}
-
-	return c.ClientIP()
+	return "127.0.0.1"
 }
 
 // GetClientIP gets the client IP from context or extracts it if not set.

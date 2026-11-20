@@ -337,3 +337,21 @@ func TestNewManagerFromConfig(t *testing.T) {
 	stats := mgr.Stats()
 	assert.Equal(t, 500, stats.MaxInFlight)
 }
+
+func TestExtractPriority_IgnoresUntrustedClientHeaders(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/public", nil)
+	c.Request.Header.Set("X-API-Priority", "critical")
+	c.Request.Header.Set("X-Priority", "critical")
+	p := overload.ExtractPriority(c, nil)
+	assert.Equal(t, overload.PriorityNormal, p) // Must not be PriorityCritical
+
+	// Even with a Manager and registered low-priority route, forged headers cannot elevate priority
+	mgr := overload.NewManager(overload.Config{
+		MaxInFlight:             10,
+		PrioritySheddingEnabled: true,
+	})
+	defer mgr.Stop()
+	mgr.RegisterRoutePriority("/public", overload.PriorityLow)
+	assert.Equal(t, overload.PriorityLow, overload.ExtractPriority(c, mgr))
+}
