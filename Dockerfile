@@ -3,10 +3,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Build Environment
 # ------------------------------------------------------------------------------
-ARG GO_VERSION=1.23.3
-ARG ALPINE_VERSION=3.20
-
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23.3-alpine3.20@sha256:c694a4d291a13a9f9d94933395673494fc2cc9d4777b85df3a7e70b3492d3574 AS builder
 
 # Install required build utilities and SSL root certificates
 RUN apk add --no-cache ca-certificates tzdata
@@ -48,7 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ------------------------------------------------------------------------------
 # Stage 2: Shared Minimal Runtime Base
 # ------------------------------------------------------------------------------
-FROM alpine:${ALPINE_VERSION} AS base-runtime
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc AS base-runtime
 
 # ca-certificates for outbound TLS, tzdata for timezones, wget for healthcheck
 RUN apk add --no-cache ca-certificates tzdata wget && \

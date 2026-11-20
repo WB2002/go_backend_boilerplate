@@ -36,18 +36,26 @@ jobs:
   static-analysis:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
       - name: Static analysis
-        run: |
-          echo "TODO: configure static analysis — see docs/adr/0001-stack.md"
-          exit 1
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
+        with:
+          version: v1.64.8
 
   dependency-audit:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Dependency audit
-        run: |
-          echo "TODO: configure dependency audit — see docs/adr/0001-stack.md"
-          exit 1
+        run: govulncheck ./...
 
   docs-check:
     runs-on: ubuntu-latest
