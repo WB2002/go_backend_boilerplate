@@ -31,8 +31,10 @@ type Config struct {
 
 // AppConfig contains base application environment metadata.
 type AppConfig struct {
-	Env  string `env:"NODE_ENV,APP_ENV" default:"development"`
-	Name string `env:"APP_NAME" default:"go_backend_boilerplate"`
+	Env              string `env:"NODE_ENV,APP_ENV" default:"development"`
+	Name             string `env:"APP_NAME" default:"go_backend_boilerplate"`
+	EnableSwagger    bool   `env:"ENABLE_SWAGGER" default:"false"`
+	EnablePlayground bool   `env:"ENABLE_GRAPHQL_PLAYGROUND" default:"false"`
 }
 
 // HTTPConfig contains HTTP server, ALB keep-alive, and Gin runtime settings.

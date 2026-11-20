@@ -7,13 +7,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+
+	"go_backend_boilerplate/internal/config"
 )
 
 func TestSwaggerEndpointMount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	registerSwagger(r)
+	registerSwagger(r, config.AppConfig{Env: "development"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/swagger/index.html", nil)

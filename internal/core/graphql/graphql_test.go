@@ -398,11 +398,27 @@ func TestGraphQLRedisFallbackOnFailure(t *testing.T) {
 }
 
 func TestGraphQLPlaygroundEndpoint(t *testing.T) {
-	h := graphql.NewHandler(graphql.Config{
+	// Playground and GraphiQL are disabled by default (fail-closed)
+	hDefault := graphql.NewHandler(graphql.Config{
 		MaxDepth:      10,
 		MaxComplexity: 50,
 		UserBudget:    1000,
 	}, nil)
+	rDefault := gin.New()
+	hDefault.RegisterRoutes(rDefault)
+
+	for _, path := range []string{"/playground", "/graphiql"} {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, path, nil)
+		rDefault.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusNotFound, w.Code, "path=%s should be disabled by default", path)
+	}
+
+	h := graphql.NewHandler(graphql.Config{
+		MaxDepth:      10,
+		MaxComplexity: 50,
+		UserBudget:    1000,
+	}, nil, graphql.WithPlayground(true))
 
 	r := gin.New()
 	h.RegisterRoutes(r)

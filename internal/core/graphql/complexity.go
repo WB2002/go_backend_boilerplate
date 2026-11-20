@@ -2,6 +2,7 @@ package graphql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,6 +10,27 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+const maxASTTraversalVisits = 5000
+
+// Sentinel errors returned by GraphQL depth and complexity analysis.
+var (
+	ErrDepthLimitExceeded      = errors.New("query exceeds maximum depth")
+	ErrComplexityLimitExceeded = errors.New("query exceeds maximum complexity")
+)
+
+func checkContextAndVisitCap(ctx context.Context, visitedNodes *int, limitErr error) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	*visitedNodes++
+	if *visitedNodes > maxASTTraversalVisits {
+		return fmt.Errorf("%w: AST traversal visit limit of %d exceeded", limitErr, maxASTTraversalVisits)
+	}
+	return nil
+}
 
 // DepthEngine computes and validates GraphQL query AST depth against configured limits.
 type DepthEngine struct {
@@ -29,63 +51,107 @@ func (d *DepthEngine) MaxDepth() int {
 }
 
 // CalculateDepth computes the maximum depth of an AST query document.
-func (d *DepthEngine) CalculateDepth(doc *ast.QueryDocument, operationName string) int {
+func (d *DepthEngine) CalculateDepth(ctx context.Context, doc *ast.QueryDocument, operationName string) (int, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+	}
 	if doc == nil || len(doc.Operations) == 0 {
-		return 0
+		return 0, nil
 	}
 
+	depthMemo := make(map[string]int)
+	visitedNodes := 0
 	maxDepth := 0
 	for _, op := range doc.Operations {
 		if operationName != "" && op.Name != operationName {
 			continue
 		}
-		visited := make(map[string]bool)
-		opDepth := d.calculateSelectionSetDepth(op.SelectionSet, doc.Fragments, visited)
+		visiting := make(map[string]bool)
+		opDepth, err := d.calculateSelectionSetDepth(ctx, op.SelectionSet, doc.Fragments, visiting, depthMemo, &visitedNodes)
+		if err != nil {
+			return 0, err
+		}
 		if opDepth > maxDepth {
 			maxDepth = opDepth
 		}
 	}
 
-	return maxDepth
+	if maxDepth > d.maxDepth {
+		return maxDepth, fmt.Errorf("%w of %d (calculated %d)", ErrDepthLimitExceeded, d.maxDepth, maxDepth)
+	}
+	return maxDepth, nil
 }
 
-func (d *DepthEngine) calculateSelectionSetDepth(selSet ast.SelectionSet, fragments ast.FragmentDefinitionList, visited map[string]bool) int {
+func (d *DepthEngine) calculateSelectionSetDepth(
+	ctx context.Context,
+	selSet ast.SelectionSet,
+	fragments ast.FragmentDefinitionList,
+	visiting map[string]bool,
+	depthMemo map[string]int,
+	visitedNodes *int,
+) (int, error) {
 	if len(selSet) == 0 {
-		return 0
+		return 0, nil
 	}
 
 	maxChildDepth := 0
 	for _, sel := range selSet {
+		if err := checkContextAndVisitCap(ctx, visitedNodes, ErrDepthLimitExceeded); err != nil {
+			return 0, err
+		}
+
 		switch s := sel.(type) {
 		case *ast.Field:
 			childDepth := 1
 			if len(s.SelectionSet) > 0 {
-				childDepth = 1 + d.calculateSelectionSetDepth(s.SelectionSet, fragments, visited)
+				subDepth, err := d.calculateSelectionSetDepth(ctx, s.SelectionSet, fragments, visiting, depthMemo, visitedNodes)
+				if err != nil {
+					return 0, err
+				}
+				childDepth = 1 + subDepth
 			}
 			if childDepth > maxChildDepth {
 				maxChildDepth = childDepth
 			}
 		case *ast.InlineFragment:
-			childDepth := d.calculateSelectionSetDepth(s.SelectionSet, fragments, visited)
+			childDepth, err := d.calculateSelectionSetDepth(ctx, s.SelectionSet, fragments, visiting, depthMemo, visitedNodes)
+			if err != nil {
+				return 0, err
+			}
 			if childDepth > maxChildDepth {
 				maxChildDepth = childDepth
 			}
 		case *ast.FragmentSpread:
-			if !visited[s.Name] {
-				visited[s.Name] = true
+			if cachedDepth, ok := depthMemo[s.Name]; ok {
+				if cachedDepth > maxChildDepth {
+					maxChildDepth = cachedDepth
+				}
+				continue
+			}
+			if !visiting[s.Name] {
+				visiting[s.Name] = true
 				frag := fragments.ForName(s.Name)
+				childDepth := 0
 				if frag != nil {
-					childDepth := d.calculateSelectionSetDepth(frag.SelectionSet, fragments, visited)
-					if childDepth > maxChildDepth {
-						maxChildDepth = childDepth
+					var err error
+					childDepth, err = d.calculateSelectionSetDepth(ctx, frag.SelectionSet, fragments, visiting, depthMemo, visitedNodes)
+					if err != nil {
+						visiting[s.Name] = false
+						return 0, err
 					}
 				}
-				visited[s.Name] = false
+				visiting[s.Name] = false
+				depthMemo[s.Name] = childDepth
+				if childDepth > maxChildDepth {
+					maxChildDepth = childDepth
+				}
 			}
 		}
 	}
 
-	return maxChildDepth
+	return maxChildDepth, nil
 }
 
 // -------------------------------------------------------------------------
@@ -128,29 +194,50 @@ func (c *ComplexityEngine) MaxComplexity() int {
 }
 
 // CalculateComplexity computes the total complexity score of the query AST.
-func (c *ComplexityEngine) CalculateComplexity(doc *ast.QueryDocument, operationName string) int {
+func (c *ComplexityEngine) CalculateComplexity(ctx context.Context, doc *ast.QueryDocument, operationName string) (int, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+	}
 	if doc == nil || len(doc.Operations) == 0 {
-		return 0
+		return 0, nil
 	}
 
+	complexityMemo := make(map[string]int)
+	visitedNodes := 0
 	maxComplexity := 0
 	for _, op := range doc.Operations {
 		if operationName != "" && op.Name != operationName {
 			continue
 		}
-		visited := make(map[string]bool)
-		opComplexity := c.calculateSelectionSetComplexity(op.SelectionSet, doc.Fragments, visited)
+		visiting := make(map[string]bool)
+		opComplexity, err := c.calculateSelectionSetComplexity(ctx, op.SelectionSet, doc.Fragments, visiting, complexityMemo, &visitedNodes)
+		if err != nil {
+			return 0, err
+		}
 		if opComplexity > maxComplexity {
 			maxComplexity = opComplexity
 		}
 	}
 
-	return maxComplexity
+	return maxComplexity, nil
 }
 
-func (c *ComplexityEngine) calculateSelectionSetComplexity(selSet ast.SelectionSet, fragments ast.FragmentDefinitionList, visited map[string]bool) int {
+func (c *ComplexityEngine) calculateSelectionSetComplexity(
+	ctx context.Context,
+	selSet ast.SelectionSet,
+	fragments ast.FragmentDefinitionList,
+	visiting map[string]bool,
+	complexityMemo map[string]int,
+	visitedNodes *int,
+) (int, error) {
 	total := 0
 	for _, sel := range selSet {
+		if err := checkContextAndVisitCap(ctx, visitedNodes, ErrComplexityLimitExceeded); err != nil {
+			return 0, err
+		}
+
 		switch s := sel.(type) {
 		case *ast.Field:
 			weight := c.cfg.DefaultScalarWeight
@@ -161,27 +248,58 @@ func (c *ComplexityEngine) calculateSelectionSetComplexity(selSet ast.SelectionS
 				weight = custom
 			}
 
-			childComplexity := 0
-			if len(s.SelectionSet) > 0 {
-				childComplexity = c.calculateSelectionSetComplexity(s.SelectionSet, fragments, visited)
+			if weight > c.cfg.MaxComplexity-total {
+				return 0, fmt.Errorf("%w of %d", ErrComplexityLimitExceeded, c.cfg.MaxComplexity)
 			}
-			total += weight + childComplexity
+			total += weight
+
+			if len(s.SelectionSet) > 0 {
+				childComplexity, err := c.calculateSelectionSetComplexity(ctx, s.SelectionSet, fragments, visiting, complexityMemo, visitedNodes)
+				if err != nil {
+					return 0, err
+				}
+				if childComplexity > c.cfg.MaxComplexity-total {
+					return 0, fmt.Errorf("%w of %d", ErrComplexityLimitExceeded, c.cfg.MaxComplexity)
+				}
+				total += childComplexity
+			}
 
 		case *ast.InlineFragment:
-			total += c.calculateSelectionSetComplexity(s.SelectionSet, fragments, visited)
+			childComplexity, err := c.calculateSelectionSetComplexity(ctx, s.SelectionSet, fragments, visiting, complexityMemo, visitedNodes)
+			if err != nil {
+				return 0, err
+			}
+			if childComplexity > c.cfg.MaxComplexity-total {
+				return 0, fmt.Errorf("%w of %d", ErrComplexityLimitExceeded, c.cfg.MaxComplexity)
+			}
+			total += childComplexity
 
 		case *ast.FragmentSpread:
-			if !visited[s.Name] {
-				visited[s.Name] = true
+			fragComplexity, ok := complexityMemo[s.Name]
+			if !ok {
+				if visiting[s.Name] {
+					continue
+				}
+				visiting[s.Name] = true
 				frag := fragments.ForName(s.Name)
 				if frag != nil {
-					total += c.calculateSelectionSetComplexity(frag.SelectionSet, fragments, visited)
+					var err error
+					fragComplexity, err = c.calculateSelectionSetComplexity(ctx, frag.SelectionSet, fragments, visiting, complexityMemo, visitedNodes)
+					if err != nil {
+						visiting[s.Name] = false
+						return 0, err
+					}
 				}
-				visited[s.Name] = false
+				visiting[s.Name] = false
+				complexityMemo[s.Name] = fragComplexity
 			}
+			if fragComplexity > c.cfg.MaxComplexity-total {
+				return 0, fmt.Errorf("%w of %d", ErrComplexityLimitExceeded, c.cfg.MaxComplexity)
+			}
+			total += fragComplexity
 		}
 	}
-	return total
+	return total, nil
 }
 
 // -------------------------------------------------------------------------

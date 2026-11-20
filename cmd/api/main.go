@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -173,7 +174,7 @@ func main() {
 	go wsHub.Run(ctx)
 	wsHandler := websocket.NewHandler(wsHub, tokenManager, cfg.HTTP.AllowedOrigins...)
 
-	gqlHandler := graphql.NewHandler(cfg.GraphQL, rdb)
+	gqlHandler := graphql.NewHandler(cfg.GraphQL, rdb, graphql.WithPlayground(shouldEnablePlayground(cfg.App)))
 
 	var healthOpts []telemetry.Option
 	if db != nil {
@@ -242,7 +243,7 @@ func main() {
 
 	// 10. Route Registration
 	healthChecker.RegisterRoutes(router)
-	registerSwagger(router)
+	registerSwagger(router, cfg.App)
 
 	authMiddleware := middleware.AuthMiddleware(tokenManager)
 	accountHandler.RegisterRoutes(router, authMiddleware)
@@ -271,4 +272,8 @@ func main() {
 	cancel()
 
 	log.Info().Msg("Server stopped gracefully")
+}
+
+func shouldEnablePlayground(appCfg config.AppConfig) bool {
+	return !strings.EqualFold(strings.TrimSpace(appCfg.Env), "production") || appCfg.EnablePlayground
 }

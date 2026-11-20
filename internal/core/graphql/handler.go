@@ -39,12 +39,13 @@ type ResolverFunc func(ctx context.Context, args map[string]interface{}) (interf
 
 // Handler serves GraphQL execution and interactive playground IDE endpoints.
 type Handler struct {
-	cfg           Config
-	schema        *ast.Schema
-	depthEngine   *DepthEngine
-	complexEngine *ComplexityEngine
-	budgetTracker *BudgetTracker
-	resolvers     map[string]ResolverFunc
+	cfg              Config
+	enablePlayground bool
+	schema           *ast.Schema
+	depthEngine      *DepthEngine
+	complexEngine    *ComplexityEngine
+	budgetTracker    *BudgetTracker
+	resolvers        map[string]ResolverFunc
 }
 
 // HandlerOption configures custom Handler behavior.
@@ -67,6 +68,13 @@ func WithFieldWeights(weights map[string]int) HandlerOption {
 			MaxComplexity: h.cfg.MaxComplexity,
 			FieldWeights:  weights,
 		})
+	}
+}
+
+// WithPlayground enables or disables mounting the GraphQL Playground and GraphiQL routes.
+func WithPlayground(enabled bool) HandlerOption {
+	return func(h *Handler) {
+		h.enablePlayground = enabled
 	}
 }
 
@@ -161,12 +169,14 @@ func (h *Handler) RegisterQueryResolver(fieldName string, fn ResolverFunc) {
 	h.resolvers[fieldName] = fn
 }
 
-// RegisterRoutes registers GraphQL and Playground routes with the provided Gin router.
+// RegisterRoutes registers GraphQL and, when enabled, Playground routes with the provided Gin router.
 func (h *Handler) RegisterRoutes(r gin.IRoutes) {
 	r.POST("/graphql", h.GraphQLHandler())
 	r.GET("/graphql", h.GraphQLHandler())
-	r.GET("/playground", h.PlaygroundHandler())
-	r.GET("/graphiql", h.PlaygroundHandler())
+	if h.enablePlayground {
+		r.GET("/playground", h.PlaygroundHandler())
+		r.GET("/graphiql", h.PlaygroundHandler())
+	}
 }
 
 // PlaygroundHandler returns a Gin handler serving the GraphQL Playground web IDE.
@@ -244,7 +254,13 @@ func (h *Handler) GraphQLHandler() gin.HandlerFunc {
 		}
 
 		// 3. Query Depth Limiting
-		depth := h.depthEngine.CalculateDepth(queryDoc, payload.OperationName)
+		depth, err := h.depthEngine.CalculateDepth(c.Request.Context(), queryDoc, payload.OperationName)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"errors": []gin.H{{"message": err.Error()}},
+			})
+			return
+		}
 		if depth > h.cfg.MaxDepth {
 			c.JSON(http.StatusOK, gin.H{
 				"errors": []gin.H{{
@@ -255,7 +271,13 @@ func (h *Handler) GraphQLHandler() gin.HandlerFunc {
 		}
 
 		// 4. Query Complexity Limiting
-		complexity := h.complexEngine.CalculateComplexity(queryDoc, payload.OperationName)
+		complexity, err := h.complexEngine.CalculateComplexity(c.Request.Context(), queryDoc, payload.OperationName)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"errors": []gin.H{{"message": err.Error()}},
+			})
+			return
+		}
 		if complexity > h.cfg.MaxComplexity {
 			c.JSON(http.StatusOK, gin.H{
 				"errors": []gin.H{{

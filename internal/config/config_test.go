@@ -42,6 +42,8 @@ func TestConfigLoadSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 8080, cfg.HTTP.Port)
 	assert.Equal(t, "test", cfg.App.Env)
+	assert.False(t, cfg.App.EnableSwagger)
+	assert.False(t, cfg.App.EnablePlayground)
 	assert.Equal(t, 65000, cfg.HTTP.KeepAliveTimeoutMs)
 	assert.Equal(t, 30000, cfg.HTTP.RequestTimeoutMs)
 	assert.Equal(t, 60000, cfg.HTTP.RequestTimeoutMaxMs)
@@ -178,4 +180,15 @@ func TestConfigSliceParsing(t *testing.T) {
 	assert.Equal(t, []string{"https://example.com", "https://app.example.com"}, cfg.HTTP.AllowedOrigins)
 	assert.Equal(t, []string{"10.0.0.0/8", "172.16.0.1"}, cfg.HTTP.TrustedProxies)
 	assert.Equal(t, []string{"US", "CA", "GB"}, cfg.Security.GeoIPAllowedCountries)
+}
+
+func TestConfigAppDebugRouteFlags(t *testing.T) {
+	setMinimalValidEnv()
+	setEnv("ENABLE_SWAGGER", "true")
+	setEnv("ENABLE_GRAPHQL_PLAYGROUND", "true")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.App.EnableSwagger)
+	assert.True(t, cfg.App.EnablePlayground)
 }
