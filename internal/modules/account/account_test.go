@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go_backend_boilerplate/internal/core/auth"
+	"go_backend_boilerplate/internal/core/email"
 	"go_backend_boilerplate/internal/modules/account"
 )
 
@@ -749,4 +750,42 @@ func TestAccount_RefreshFailsClosedOnRevokeError(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		assert.NotContains(t, w.Body.String(), "should-not-be-issued")
 	})
+}
+
+func TestAccount_ForgotPasswordRendersEmailBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := account.NewMockRepository()
+	hasher := auth.NewArgon2idHasher(2, 4, 2*time.Second)
+	mockMailer := email.NewMockMailer()
+
+	user := &account.User{
+		ID:           uuid.NewString(),
+		Email:        "reset-render@example.com",
+		PasswordHash: "hashed",
+		Status:       "active",
+	}
+	require.NoError(t, repo.Create(context.Background(), user))
+
+	h := account.NewHandlerWithMailer(repo, hasher, nil, nil, mockMailer)
+	r := gin.New()
+	h.RegisterRoutes(r, func(c *gin.Context) {})
+
+	body, _ := json.Marshal(map[string]string{"email": "reset-render@example.com"})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/account/forgot-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, mockMailer.SentMessages, 1)
+
+	msg := mockMailer.SentMessages[0]
+	token, ok := msg.Data["Token"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+
+	assert.NotEmpty(t, msg.BodyText)
+	assert.NotEmpty(t, msg.BodyHTML)
+	assert.Contains(t, msg.BodyText, token)
+	assert.Contains(t, msg.BodyHTML, token)
 }

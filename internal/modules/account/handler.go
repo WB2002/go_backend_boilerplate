@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -453,9 +454,19 @@ func (h *Handler) ForgotPassword(c *gin.Context) {
 	}
 
 	if h.mailer != nil {
+		bodyText := fmt.Sprintf(
+			"You requested a password reset.\n\nYour password reset token is: %s\n\nUse this token to reset your password within 15 minutes. If you did not request a password reset, you can safely ignore this email.",
+			rawToken,
+		)
+		bodyHTML := fmt.Sprintf(
+			"<p>You requested a password reset.</p><p>Your password reset token is: <code>%s</code></p><p>Use this token to reset your password within 15 minutes. If you did not request a password reset, you can safely ignore this email.</p>",
+			html.EscapeString(rawToken),
+		)
 		_ = h.mailer.Send(c.Request.Context(), email.Message{
-			To:      user.Email,
-			Subject: "Password Reset Request",
+			To:       user.Email,
+			Subject:  "Password Reset Request",
+			BodyText: bodyText,
+			BodyHTML: bodyHTML,
 			Data: map[string]any{
 				"Token": rawToken,
 			},
