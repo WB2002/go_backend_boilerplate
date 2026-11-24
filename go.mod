@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/oschwald/geoip2-golang v1.11.0
+	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/pressly/goose/v3 v3.22.1
 	github.com/redis/go-redis/v9 v9.24.0
 	github.com/rs/zerolog v1.35.1
