@@ -175,13 +175,8 @@ func (m *Manager) samplePressure() {
 	}
 	atomic.StoreUint64(&m.lastGCPauseNs, lastPause)
 
-	pressured := false
-	if m.config.MaxHeapBytes > 0 && memStats.HeapAlloc > m.config.MaxHeapBytes {
-		pressured = true
-	}
-	if m.config.MaxGCPause > 0 && lastPause > uint64(m.config.MaxGCPause.Nanoseconds()) {
-		pressured = true
-	}
+	pressured := (m.config.MaxHeapBytes > 0 && memStats.HeapAlloc > m.config.MaxHeapBytes) ||
+		(m.config.MaxGCPause > 0 && lastPause > uint64(m.config.MaxGCPause.Nanoseconds()))
 
 	if pressured {
 		atomic.StoreInt32(&m.underPressure, 1)

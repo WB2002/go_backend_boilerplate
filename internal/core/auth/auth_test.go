@@ -99,7 +99,7 @@ func handleMockRedisConn(c net.Conn, store map[string]string, mu *sync.Mutex) {
 				}
 			}
 			mu.Unlock()
-			_, _ = c.Write([]byte(fmt.Sprintf(":%d\r\n", count)))
+			_, _ = fmt.Fprintf(c, ":%d\r\n", count)
 		default:
 			_, _ = c.Write([]byte("+OK\r\n"))
 		}

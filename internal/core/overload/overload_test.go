@@ -200,9 +200,10 @@ func TestWaitQueueThunderingHerd(t *testing.T) {
 			req, _ := http.NewRequest(http.MethodGet, "/work", nil)
 			router.ServeHTTP(w, req)
 			mu.Lock()
-			if w.Code == http.StatusOK {
+			switch w.Code {
+			case http.StatusOK:
 				successCount++
-			} else if w.Code == http.StatusServiceUnavailable {
+			case http.StatusServiceUnavailable:
 				failCount++
 			}
 			mu.Unlock()

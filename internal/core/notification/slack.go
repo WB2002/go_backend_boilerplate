@@ -122,7 +122,7 @@ func NewSlackService(cfg Config, clients ...HTTPDoer) *SlackService {
 	var doer HTTPDoer
 	if len(clients) > 0 && clients[0] != nil {
 		val := reflect.ValueOf(clients[0])
-		if val.Kind() == reflect.Ptr && val.IsNil() {
+		if val.Kind() == reflect.Pointer && val.IsNil() {
 			doer = nil
 		} else {
 			doer = clients[0]

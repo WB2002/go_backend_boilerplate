@@ -103,3 +103,4 @@ fi
 
 echo "osv-scanner: ok (no findings at or above ${AUDIT_LEVEL})"
 exit 0
+

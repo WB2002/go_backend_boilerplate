@@ -32,3 +32,4 @@ fi
 
 echo "trivy: install trivy CLI or Docker to run locally" >&2
 exit 1
+

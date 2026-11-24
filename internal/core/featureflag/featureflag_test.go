@@ -450,7 +450,7 @@ func handleMockRedisClient(
 				val, ok := hashes[key][field]
 				mu.Unlock()
 				if ok {
-					_, _ = c.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(val), val)))
+					_, _ = fmt.Fprintf(c, "$%d\r\n%s\r\n", len(val), val)
 				} else {
 					_, _ = c.Write([]byte("$-1\r\n"))
 				}
@@ -481,9 +481,9 @@ func handleMockRedisClient(
 				mu.Unlock()
 
 				var b strings.Builder
-				b.WriteString(fmt.Sprintf("*%d\r\n", len(data)*2))
+				fmt.Fprintf(&b, "*%d\r\n", len(data)*2)
 				for k, v := range data {
-					b.WriteString(fmt.Sprintf("$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v))
+					fmt.Fprintf(&b, "$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v)
 				}
 				_, _ = c.Write([]byte(b.String()))
 			} else {
@@ -515,7 +515,7 @@ func handleMockRedisClient(
 				_, _ = subConn.Write([]byte(frame))
 			}
 			mu.Unlock()
-			_, _ = c.Write([]byte(fmt.Sprintf(":%d\r\n", len(conns))))
+			_, _ = fmt.Fprintf(c, ":%d\r\n", len(conns))
 		default:
 			_, _ = c.Write([]byte("+OK\r\n"))
 		}

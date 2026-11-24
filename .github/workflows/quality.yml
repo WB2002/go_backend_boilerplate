@@ -21,9 +21,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Static analysis
-        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v1.64.8
+          version: v2.15.0
 
   test:
     runs-on: ubuntu-latest
@@ -46,7 +46,7 @@ jobs:
           go-version-file: go.mod
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
       - name: Dependency audit (govulncheck)
         run: govulncheck ./...
       - name: Dependency audit (OSV-Scanner)
@@ -65,3 +65,4 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

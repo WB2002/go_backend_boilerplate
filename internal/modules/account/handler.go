@@ -268,7 +268,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 	}
 
 	if user.PasswordChangedAt != nil {
-		if claims.IssuedAt == nil || !claims.IssuedAt.Time.After(*user.PasswordChangedAt) {
+		if claims.IssuedAt == nil || !claims.IssuedAt.After(*user.PasswordChangedAt) {
 			problem.Respond(c, http.StatusUnauthorized, "TOKEN_INVALIDATED", "Unauthorized", "Refresh token invalidated due to password change.")
 			return
 		}

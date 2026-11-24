@@ -32,3 +32,4 @@ fi
 
 echo "== Disk usage after cleanup =="
 df -h /
+

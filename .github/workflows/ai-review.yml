@@ -12,3 +12,4 @@ jobs:
       - run: |
           echo "Enable Cursor Bugbot or CodeRabbit in GitHub repository settings."
           echo "This workflow is informational and does not block merge."
+

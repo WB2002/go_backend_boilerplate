@@ -526,7 +526,7 @@ func handleMockRedisConn(c net.Conn, store map[string]int, subscribers map[strin
 					delete(store, key)
 					curr = 0
 				}
-				_, _ = c.Write([]byte(fmt.Sprintf(":%d\r\n", curr)))
+				_, _ = fmt.Fprintf(c, ":%d\r\n", curr)
 			} else {
 				_, _ = c.Write([]byte("+OK\r\n"))
 			}
@@ -557,7 +557,7 @@ func handleMockRedisConn(c net.Conn, store map[string]int, subscribers map[strin
 				_, _ = subConn.Write([]byte(frame))
 			}
 			mu.Unlock()
-			_, _ = c.Write([]byte(fmt.Sprintf(":%d\r\n", len(conns))))
+			_, _ = fmt.Fprintf(c, ":%d\r\n", len(conns))
 		default:
 			_, _ = c.Write([]byte("+OK\r\n"))
 		}
