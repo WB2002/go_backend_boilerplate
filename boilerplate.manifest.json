@@ -1,0 +1,39 @@
+{
+  "name": "go-backend-boilerplate",
+  "language": "go",
+  "capabilities": {
+    "health": {
+      "method": "GET",
+      "path": "/health/live"
+    },
+    "auth": {
+      "register": {
+        "method": "POST",
+        "path": "/account/register",
+        "emailField": "email",
+        "passwordField": "password"
+      },
+      "login": {
+        "method": "POST",
+        "path": "/account/login",
+        "emailField": "email",
+        "passwordField": "password",
+        "tokenPath": "accessToken",
+        "refreshPath": "refreshToken"
+      },
+      "me": {
+        "method": "GET",
+        "path": "/account/me",
+        "userIdPath": "id"
+      },
+      "refresh": {
+        "method": "POST",
+        "path": "/account/refresh"
+      }
+    },
+    "websockets": {
+      "enabled": true,
+      "path": "/realtime"
+    }
+  }
+}

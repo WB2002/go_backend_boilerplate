@@ -3,3 +3,6 @@
 
 .worktrees/
 .superpowers/
+.conformance-runner/
+reports/
+.osv-scan-output.json

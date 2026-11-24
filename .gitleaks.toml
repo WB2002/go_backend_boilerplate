@@ -1,0 +1,20 @@
+title = "go-backend-boilerplate"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders and test fixtures that are not real secrets"
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.conformance\.example$''',
+  '''_test\.go$''',
+  '''(^|/)\.worktrees/''',
+  '''(^|/)\.conformance-runner/''',
+  '''(^|/)reports/''',
+]
+regexes = [
+  '''dev-cookie-secret-min-32-chars-long!''',
+  '''conformance-cookie-secret-32-chars-min''',
+  '''conformance-secret''',
+]
