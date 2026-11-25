@@ -76,7 +76,7 @@ func TestCSRFMiddleware_Mutative_Validation(t *testing.T) {
 
 	// 2. Missing header -> 403
 	req = httptest.NewRequest(http.MethodPost, "/action", strings.NewReader(`{}`))
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken})
+	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken, HttpOnly: true, Secure: true})
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -87,7 +87,7 @@ func TestCSRFMiddleware_Mutative_Validation(t *testing.T) {
 	require.NoError(t, err)
 
 	req = httptest.NewRequest(http.MethodPost, "/action", strings.NewReader(`{}`))
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken})
+	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken, HttpOnly: true, Secure: true})
 	req.Header.Set(middleware.CSRFHeaderName, otherValidToken)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -99,7 +99,7 @@ func TestCSRFMiddleware_Mutative_Validation(t *testing.T) {
 	require.NoError(t, err)
 
 	req = httptest.NewRequest(http.MethodPost, "/action", strings.NewReader(`{}`))
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: forgedToken})
+	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: forgedToken, HttpOnly: true, Secure: true})
 	req.Header.Set(middleware.CSRFHeaderName, forgedToken)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -108,7 +108,7 @@ func TestCSRFMiddleware_Mutative_Validation(t *testing.T) {
 
 	// 5. Valid double-submit token -> 200 OK
 	req = httptest.NewRequest(http.MethodPost, "/action", strings.NewReader(`{}`))
-	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken})
+	req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: validToken, HttpOnly: true, Secure: true})
 	req.Header.Set(middleware.CSRFHeaderName, validToken)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)

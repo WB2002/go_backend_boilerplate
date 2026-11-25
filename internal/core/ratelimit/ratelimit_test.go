@@ -207,21 +207,21 @@ func TestMultiIdentifierSelection(t *testing.T) {
 
 		// Guest A
 		reqG1, _ := http.NewRequest(http.MethodGet, "/guest-test", nil)
-		reqG1.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-1"})
+		reqG1.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-1", HttpOnly: true, Secure: true})
 		wG1 := httptest.NewRecorder()
 		router.ServeHTTP(wG1, reqG1)
 		assert.Equal(t, http.StatusOK, wG1.Code)
 
 		// Guest A blocked
 		reqG1Blocked, _ := http.NewRequest(http.MethodGet, "/guest-test", nil)
-		reqG1Blocked.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-1"})
+		reqG1Blocked.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-1", HttpOnly: true, Secure: true})
 		wG1Blocked := httptest.NewRecorder()
 		router.ServeHTTP(wG1Blocked, reqG1Blocked)
 		assert.Equal(t, http.StatusTooManyRequests, wG1Blocked.Code)
 
 		// Guest B allowed
 		reqG2, _ := http.NewRequest(http.MethodGet, "/guest-test", nil)
-		reqG2.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-2"})
+		reqG2.AddCookie(&http.Cookie{Name: "guest_session", Value: "guest-token-2", HttpOnly: true, Secure: true})
 		wG2 := httptest.NewRecorder()
 		router.ServeHTTP(wG2, reqG2)
 		assert.Equal(t, http.StatusOK, wG2.Code)

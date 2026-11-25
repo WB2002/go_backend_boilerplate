@@ -1,0 +1,3 @@
+# Ignore intentional Semgrep rule test fixtures during repository scans
+test/security/semgrep-fixtures/
+semgrep/rules/*.go

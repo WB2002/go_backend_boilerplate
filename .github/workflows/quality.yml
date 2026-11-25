@@ -49,7 +49,7 @@ jobs:
       - name: Install Semgrep
         run: pip install semgrep
       - name: Semgrep rule tests
-        run: semgrep --config semgrep/rules/obfuscated-exfil.yaml --test semgrep/rules/obfuscated-exfil.go
+        run: semgrep --config semgrep/rules/obfuscated-exfil.yaml --test test/security/semgrep-fixtures/obfuscated-exfil.go
       - name: Application security scans
         run: ./scripts/ci/run-semgrep.sh && ./scripts/ci/scan-long-base64-literals.sh
 
