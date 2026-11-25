@@ -3,11 +3,12 @@ package httpclient
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -429,7 +430,7 @@ func (c *Client) executeWithRetry(ctx context.Context, req *http.Request) (*http
 			if calc > c.maxRetryInterval || calc <= 0 {
 				calc = c.maxRetryInterval
 			}
-			jitter := rand.Float64()
+			jitter := cryptoFloat64()
 			backoff := time.Duration(float64(calc) * jitter)
 
 			select {
@@ -547,6 +548,15 @@ func (cr *cachedResponse) toHTTPResponse() *http.Response {
 		Body:          io.NopCloser(bytes.NewReader(cr.Body)),
 		ContentLength: cr.ContentLength,
 	}
+}
+
+func cryptoFloat64() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0.5
+	}
+	v := binary.BigEndian.Uint64(b[:]) >> 11
+	return float64(v) / float64(uint64(1)<<53)
 }
 
 func isSSRFError(err error) bool {

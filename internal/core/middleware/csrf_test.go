@@ -42,6 +42,9 @@ func TestCSRFMiddleware_SafeMethods(t *testing.T) {
 	}
 	require.NotNil(t, csrfCookie)
 	assert.Equal(t, headerToken, csrfCookie.Value)
+	assert.True(t, csrfCookie.HttpOnly)
+	assert.True(t, csrfCookie.Secure)
+	assert.Equal(t, http.SameSiteLaxMode, csrfCookie.SameSite)
 
 	// 2. Second GET with existing valid cookie preserves token
 	req2 := httptest.NewRequest(http.MethodGet, "/hello", nil)

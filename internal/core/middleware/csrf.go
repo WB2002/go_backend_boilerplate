@@ -116,14 +116,13 @@ func CSRFMiddleware(secret string, exemptPaths []string) gin.HandlerFunc {
 			// Generate and seed fresh cookie & header
 			token, err := GenerateCSRFToken(secret)
 			if err == nil {
-				isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 				http.SetCookie(c.Writer, &http.Cookie{
 					Name:     CSRFCookieName,
 					Value:    token,
 					Path:     "/",
-					HttpOnly: false,
+					HttpOnly: true,
 					SameSite: http.SameSiteLaxMode,
-					Secure:   isSecure,
+					Secure:   true,
 				})
 				c.Header(CSRFHeaderName, token)
 			}

@@ -2,9 +2,10 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -286,12 +287,21 @@ func ApplyJitter(dur time.Duration, ratio float64) time.Duration {
 	if ratio > 1.0 {
 		ratio = 1.0
 	}
-	delta := (rand.Float64()*2 - 1) * ratio
+	delta := (cryptoFloat64()*2 - 1) * ratio
 	jittered := time.Duration(float64(dur) * (1.0 + delta))
 	if jittered <= 0 {
 		return dur
 	}
 	return jittered
+}
+
+func cryptoFloat64() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0.5
+	}
+	v := binary.BigEndian.Uint64(b[:]) >> 11
+	return float64(v) / float64(uint64(1)<<53)
 }
 
 // GetOrSet retrieves an item from cache, or executes loader with singleflight deduplication,

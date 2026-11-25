@@ -1023,3 +1023,45 @@ func TestWebSocket_FailsClosedWhenTokenManagerNil(t *testing.T) {
 	assert.NotEqual(t, http.StatusSwitchingProtocols, resp.StatusCode)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
+
+func TestWebSocket_SetUpgraderPreservesOriginEnforcement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	hub := websocket.NewHub(websocket.Config{
+		MaxConnectionsPerUser: 5,
+		MessagesPerMinute:     60,
+		AllowedOrigins:        []string{"https://trusted.example.com"},
+	}, nil)
+	defer hub.Close()
+
+	handler := websocket.NewHandler(hub, &mockTokenManager{}, "https://trusted.example.com")
+	handler.SetUpgrader(gorilla.Upgrader{ReadBufferSize: 2048, WriteBufferSize: 2048})
+
+	router := gin.New()
+	handler.RegisterRoutes(router, "/realtime")
+
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime"
+
+	// Disallowed origin must still be rejected with 403
+	header := http.Header{}
+	header.Set("Origin", "https://evil.example.com")
+	header.Set("Authorization", "Bearer valid-token")
+	_, resp, err := gorilla.DefaultDialer.Dial(wsURL, header)
+	assert.Error(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// Allowed origin must succeed
+	header = http.Header{}
+	header.Set("Origin", "https://trusted.example.com")
+	header.Set("Authorization", "Bearer valid-token")
+	conn, resp, err := gorilla.DefaultDialer.Dial(wsURL, header)
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	_ = conn.Close()
+}

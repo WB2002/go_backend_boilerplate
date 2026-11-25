@@ -15,20 +15,21 @@ import (
 
 // Handler manages WebSocket upgrade handshakes, authentication, and connection binding.
 type Handler struct {
-	hub          *Hub
-	tokenManager auth.TokenManager
-	upgrader     websocket.Upgrader
-	env          string
+	hub            *Hub
+	tokenManager   auth.TokenManager
+	upgrader       websocket.Upgrader
+	allowedOrigins []string
+	env            string
 }
 
 // NewHandler constructs a WebSocket HTTP handler.
 func NewHandler(hub *Hub, tokenManager auth.TokenManager, allowedOrigins ...string) *Handler {
-	origins := allowedOrigins
+	origins := append([]string(nil), allowedOrigins...)
 	env := ""
 	if hub != nil {
 		env = hub.config.Env
 		if len(origins) == 0 && len(hub.config.AllowedOrigins) > 0 {
-			origins = hub.config.AllowedOrigins
+			origins = append([]string(nil), hub.config.AllowedOrigins...)
 		}
 	}
 
@@ -41,10 +42,11 @@ func NewHandler(hub *Hub, tokenManager auth.TokenManager, allowedOrigins ...stri
 	}
 
 	return &Handler{
-		hub:          hub,
-		tokenManager: tokenManager,
-		upgrader:     upgrader,
-		env:          env,
+		hub:            hub,
+		tokenManager:   tokenManager,
+		upgrader:       upgrader,
+		allowedOrigins: origins,
+		env:            env,
 	}
 }
 
@@ -53,8 +55,14 @@ func (h *Handler) SetEnv(env string) {
 	h.env = env
 }
 
-// SetUpgrader overrides the default Gorilla WebSocket upgrader.
+// SetUpgrader overrides the default Gorilla WebSocket upgrader while preserving origin enforcement.
 func (h *Handler) SetUpgrader(u websocket.Upgrader) {
+	if u.CheckOrigin == nil {
+		origins := append([]string(nil), h.allowedOrigins...)
+		u.CheckOrigin = func(r *http.Request) bool {
+			return checkOrigin(r, origins)
+		}
+	}
 	h.upgrader = u
 }
 
@@ -118,8 +126,18 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 		}
 	}
 
-	// 2. Upgrade HTTP connection to WebSocket
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, responseHeader)
+	// 2. Upgrade HTTP connection to WebSocket with explicit origin check
+	upgrader := h.upgrader
+	originCheck := upgrader.CheckOrigin
+	if originCheck == nil {
+		origins := h.allowedOrigins
+		originCheck = func(r *http.Request) bool {
+			return checkOrigin(r, origins)
+		}
+	}
+	upgrader.CheckOrigin = originCheck
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, responseHeader)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to upgrade websocket connection")
 		return
