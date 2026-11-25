@@ -434,3 +434,40 @@ func TestAuthServiceIntegration(t *testing.T) {
 	assert.NotEmpty(t, newPair.AccessToken)
 	assert.NotEqual(t, pair.AccessToken, newPair.AccessToken)
 }
+
+func TestJWTSignatureMalleabilityRejected(t *testing.T) {
+	privPEM, pubPEM := generateTestRSAKeys()
+	tokenMgr, err := auth.NewJWTTokenManager(privPEM, pubPEM, 15*time.Minute, 7*24*time.Hour, nil)
+	require.NoError(t, err)
+
+	pair, err := tokenMgr.GenerateTokenPair("malleability_user", []string{"user"})
+	require.NoError(t, err)
+
+	parts := strings.Split(pair.AccessToken, ".")
+	require.Len(t, parts, 3)
+
+	sig := parts[2]
+	last := sig[len(sig)-1]
+	// Mutating the trailing base64url character changes either signature bits or
+	// unused padding bits; strict canonical validation must reject both.
+	replacement := byte('A')
+	if last == 'A' {
+		replacement = 'B'
+	}
+	mutated := parts[0] + "." + parts[1] + "." + sig[:len(sig)-1] + string(replacement)
+
+	_, err = tokenMgr.ValidateAccessToken(context.Background(), mutated)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+
+	// Explicitly flip only a trailing unused bit in the final base64url character
+	// (e.g., 'A'->'B', 'Q'->'R', 'g'->'h', 'w'->'x') to verify non-canonical padding rejection.
+	malleableChar := byte(last + 1)
+	if last == 'z' || last == '9' || last == '_' || last == '-' {
+		malleableChar = byte(last - 1)
+	}
+	nonCanonical := parts[0] + "." + parts[1] + "." + sig[:len(sig)-1] + string(malleableChar)
+	_, err = tokenMgr.ValidateAccessToken(context.Background(), nonCanonical)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+}

@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,7 +188,28 @@ func (m *JWTTokenManager) ValidateRefreshToken(ctx context.Context, tokenStr str
 	return m.validateToken(ctx, tokenStr, TokenTypeRefresh)
 }
 
+func validateCanonicalJWTSegments(tokenStr string) error {
+	parts := strings.Split(tokenStr, ".")
+	if len(parts) != 3 {
+		return ErrInvalidToken
+	}
+	strictEnc := base64.RawURLEncoding.Strict()
+	for _, seg := range parts {
+		if seg == "" {
+			return ErrInvalidToken
+		}
+		if _, err := strictEnc.DecodeString(seg); err != nil {
+			return fmt.Errorf("%w: non-canonical base64url segment", ErrInvalidToken)
+		}
+	}
+	return nil
+}
+
 func (m *JWTTokenManager) validateToken(ctx context.Context, tokenStr, expectedType string) (*Claims, error) {
+	if err := validateCanonicalJWTSegments(tokenStr); err != nil {
+		return nil, err
+	}
+
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
