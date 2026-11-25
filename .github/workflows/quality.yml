@@ -25,17 +25,33 @@ jobs:
         with:
           version: v2.15.0
 
-  test:
+  types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - name: Build
+      - name: Build and typecheck
         run: go build ./...
-      - name: Test with race detector
-        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+
+  app-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Semgrep rule tests
+        run: semgrep --config semgrep/rules/obfuscated-exfil.yaml --test semgrep/rules/obfuscated-exfil.go
+      - name: Application security scans
+        run: ./scripts/ci/run-semgrep.sh && ./scripts/ci/scan-long-base64-literals.sh
 
   supply-chain:
     runs-on: ubuntu-latest
@@ -56,6 +72,103 @@ jobs:
       - name: Secret scan (Trivy)
         run: ./scripts/ci/run-trivy-app-secrets.sh
 
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Unit tests with race detector
+        run: go test -race -short ./cmd/... ./internal/...
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval \"db.adminCommand('ping')\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Free runner disk space
+        run: ./scripts/ci/free-disk-space.sh
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/app_db?sslmode=disable
+          REDIS_ADDR: 127.0.0.1:6379
+          MONGO_URI: mongodb://127.0.0.1:27017
+        run: go test -race -tags=integration ./test/integration/... ./internal/...
+
+  property:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Property-based tests
+        run: go test -race -v ./test/property/...
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Contract tests
+        run: go test -race -v ./test/contracts/...
+
+  mutation:
+    runs-on: ubuntu-latest
+    env:
+      QUALITY_BASE_REF: origin/${{ github.event.pull_request.base.ref || 'main' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Mutation tests
+        run: ./scripts/ci/run-mutation.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: mutation-report
+          path: reports/mutation/
+
   secrets:
     runs-on: ubuntu-latest
     steps:
@@ -65,4 +178,3 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

@@ -1,6 +1,6 @@
 export PATH := $(HOME)/go/bin:$(HOME)/.local/bin:$(PATH)
 
-.PHONY: all build test lint verify clean hooks docker-build docker-build-api docker-build-worker docker-up docker-down migrate-up migrate-down migrate-status migrate-create swagger codegen-sdk
+.PHONY: all build test lint verify clean hooks docker-build docker-build-api docker-build-worker docker-up docker-down migrate-up migrate-down migrate-status migrate-create swagger codegen-sdk quality quality-lint quality-types quality-unit quality-integration quality-property quality-contract quality-mutation quality-app-security quality-supply-chain
 
 all: verify
 
@@ -54,3 +54,33 @@ docker-down:
 
 clean:
 	go clean -testcache
+
+quality: quality-lint quality-types quality-unit quality-integration quality-property quality-contract quality-mutation quality-app-security quality-supply-chain
+
+quality-lint:
+	golangci-lint run ./...
+
+quality-types:
+	go build ./...
+	go vet ./...
+
+quality-unit:
+	go test -race -short ./cmd/... ./internal/...
+
+quality-integration:
+	go test -race -tags=integration ./test/integration/... ./internal/...
+
+quality-property:
+	go test -race -v ./test/property/...
+
+quality-contract:
+	go test -race -v ./test/contracts/...
+
+quality-mutation:
+	./scripts/ci/run-mutation.sh
+
+quality-app-security:
+	./scripts/ci/run-semgrep.sh && ./scripts/ci/scan-long-base64-literals.sh
+
+quality-supply-chain:
+	govulncheck ./... && ./scripts/ci/run-osv-scanner.sh && ./scripts/ci/run-trivy.sh && ./scripts/ci/run-trivy-app-secrets.sh

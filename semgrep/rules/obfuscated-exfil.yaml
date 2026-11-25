@@ -1,0 +1,50 @@
+rules:
+  - id: go.obfuscated-exfil.exec-shell
+    message: Avoid invoking a shell via exec.Command("sh"|"bash", "-c", ...); common in command injection and obfuscated exfil.
+    severity: ERROR
+    languages: [go]
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", ...)
+      - pattern: exec.Command("bash", "-c", ...)
+      - pattern: exec.Command("/bin/sh", "-c", ...)
+      - pattern: exec.Command("/bin/bash", "-c", ...)
+      - pattern: exec.CommandContext($CTX, "sh", "-c", ...)
+      - pattern: exec.CommandContext($CTX, "bash", "-c", ...)
+    paths:
+      include:
+        - cmd/
+        - internal/
+        - test/
+
+  - id: go.obfuscated-exfil.base64-to-exec
+    message: Base64 decode chained to exec.Command (obfuscation pattern).
+    severity: ERROR
+    languages: [go]
+    patterns:
+      - pattern: |
+          $DECODED, $ERR := base64.$ENC.DecodeString($PAYLOAD)
+          ...
+          exec.Command(..., string($DECODED), ...)
+    paths:
+      include:
+        - cmd/
+        - internal/
+        - test/
+
+  - id: go.obfuscated-exfil.env-exfil-http
+    message: Sending os.Environ() over HTTP (possible credential exfiltration).
+    severity: ERROR
+    languages: [go]
+    pattern-either:
+      - pattern: |
+          $ENV := os.Environ()
+          ...
+          http.Post($URL, $CT, ...)
+      - pattern: |
+          $ENV := os.Environ()
+          ...
+          http.NewRequest($METHOD, $URL, ...)
+    paths:
+      include:
+        - cmd/
+        - internal/
