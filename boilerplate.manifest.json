@@ -1,6 +1,7 @@
 {
   "name": "go-backend-boilerplate",
   "language": "go",
+  "openapiUrl": "/swagger/doc.json",
   "capabilities": {
     "health": {
       "method": "GET",
