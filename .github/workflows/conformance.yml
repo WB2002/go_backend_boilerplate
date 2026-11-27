@@ -10,6 +10,9 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   conformance:
     runs-on: ubuntu-latest
@@ -22,20 +25,20 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: app_db
+          POSTGRES_USER: conformance_app
+          POSTGRES_PASSWORD: conformance_pg_password
+          POSTGRES_DB: conformance_db
         ports:
-          - 5432:5432
+          - 15432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -U conformance_app -d conformance_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7
+        image: redis:8.2.2-alpine
         ports:
-          - 6379:6379
+          - 16379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -43,10 +46,13 @@ jobs:
           --health-retries 5
       mongo:
         image: mongo:8.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: conformance_mongo
+          MONGO_INITDB_ROOT_PASSWORD: conformance_mongo_password
         ports:
-          - 27017:27017
+          - 27018:27017
         options: >-
-          --health-cmd "mongosh --eval \"db.adminCommand('ping')\""
+          --health-cmd "mongosh -u conformance_mongo -p conformance_mongo_password --authenticationDatabase admin --eval \"db.adminCommand('ping')\""
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -54,6 +60,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Free runner disk space
         run: ./scripts/ci/free-disk-space.sh
@@ -75,19 +83,34 @@ jobs:
           cd .conformance-runner && go build -o "${RUNNER_TEMP}/conformance-audit" ./cmd/conformance-audit
           go clean -cache -modcache
           cd "${GITHUB_WORKSPACE}" && rm -rf .conformance-runner
-          echo "CONFORMANCE_AUDIT_BIN=${RUNNER_TEMP}/conformance-audit" >> "${GITHUB_ENV}"
 
       - name: Build Go API server
-        run: |
-          go build -o "${RUNNER_TEMP}/go-api" ./cmd/api
-          echo "CONFORMANCE_API_BIN=${RUNNER_TEMP}/go-api" >> "${GITHUB_ENV}"
+        run: go build -o "${RUNNER_TEMP}/go-api" ./cmd/api
 
       - name: Run PR/Push Conformance Gate
         if: github.event_name != 'schedule'
+        env:
+          CONFORMANCE_AUDIT_BIN: ${{ runner.temp }}/conformance-audit
+          CONFORMANCE_API_BIN: ${{ runner.temp }}/go-api
+          POSTGRES_PORT: '15432'
+          POSTGRES_USER: conformance_app
+          POSTGRES_PASSWORD: conformance_pg_password
+          POSTGRES_DB: conformance_db
+          REDIS_PORT: '16379'
+          MONGO_URI: mongodb://conformance_mongo:conformance_mongo_password@127.0.0.1:27018/go-conformance?authSource=admin
         run: ./scripts/ci/run-conformance-audit.sh --stages sast,graph,pentest,load --profile baseline --output reports
 
       - name: Run Nightly Full Soak & DAST Audit
         if: github.event_name == 'schedule'
+        env:
+          CONFORMANCE_AUDIT_BIN: ${{ runner.temp }}/conformance-audit
+          CONFORMANCE_API_BIN: ${{ runner.temp }}/go-api
+          POSTGRES_PORT: '15432'
+          POSTGRES_USER: conformance_app
+          POSTGRES_PASSWORD: conformance_pg_password
+          POSTGRES_DB: conformance_db
+          REDIS_PORT: '16379'
+          MONGO_URI: mongodb://conformance_mongo:conformance_mongo_password@127.0.0.1:27018/go-conformance?authSource=admin
         run: ./scripts/ci/run-conformance-audit.sh --stages all --profile soak --output reports
 
       - name: Upload SARIF to GitHub Security
@@ -103,4 +126,3 @@ jobs:
         with:
           name: conformance-report
           path: reports/go-backend-boilerplate/
-

@@ -229,10 +229,12 @@ func (p *WorkerPool) runWorker(ctx context.Context, workerID string) {
 		p.handlersMu.RUnlock()
 
 		if len(queues) == 0 {
+			timer := time.NewTimer(currentIdleBackoff)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(currentIdleBackoff):
+			case <-timer.C:
 				if currentIdleBackoff < 1*time.Second {
 					currentIdleBackoff = currentIdleBackoff * 2
 					if currentIdleBackoff > 1*time.Second {
@@ -272,10 +274,12 @@ func (p *WorkerPool) runWorker(ctx context.Context, workerID string) {
 		if claimedAny {
 			currentIdleBackoff = p.pollInterval
 		} else {
+			timer := time.NewTimer(currentIdleBackoff)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(currentIdleBackoff):
+			case <-timer.C:
 			}
 			if currentIdleBackoff < 1*time.Second {
 				currentIdleBackoff = currentIdleBackoff * 2

@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: '0 6 * * 1'
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze
@@ -35,4 +38,3 @@ jobs:
           # SARIF upload needs Settings -> Security -> Code scanning enabled on the repo.
           # After enabling, set repository variable CODEQL_UPLOAD=true.
           upload: ${{ vars.CODEQL_UPLOAD == 'true' }}
-

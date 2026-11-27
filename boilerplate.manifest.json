@@ -36,6 +36,22 @@
       "enabled": true,
       "path": "/realtime"
     }
+  },
+  "architecture": {
+    "publicRoutes": [
+      "/health",
+      "/health/live",
+      "/health/ready",
+      "/swagger/*",
+      "/playground",
+      "/graphiql",
+      "/graphql",
+      "/account/register",
+      "/account/login",
+      "/account/refresh",
+      "/account/forgot-password",
+      "/account/reset-password"
+    ],
+    "requireAuthOnNonPublic": true
   }
 }
-

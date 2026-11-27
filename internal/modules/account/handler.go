@@ -68,23 +68,12 @@ func (h *Handler) RegisterRoutes(r gin.IRoutes, authMiddleware gin.HandlerFunc) 
 	r.POST("/account/change-password", authMiddleware, h.ChangePassword)
 }
 
-// RegisterGroup mounts account endpoints on an existing gin.RouterGroup.
-func (h *Handler) RegisterGroup(rg *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
-	rg.POST("/register", h.Register)
-	rg.POST("/login", h.Login)
-	rg.POST("/refresh", h.Refresh)
-	rg.POST("/forgot-password", h.ForgotPassword)
-	rg.POST("/reset-password", h.ResetPassword)
-	rg.GET("/me", authMiddleware, h.Me)
-	rg.POST("/change-password", authMiddleware, h.ChangePassword)
-}
-
 // Register handles user account registration.
 // @Summary Register a new user account
 // @Description Creates a new user profile with hashed password credentials
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Param request body RegisterRequest true "Registration payload"
 // @Success 201 {object} UserResponse
 // @Failure 400 {object} problem.Details
@@ -151,7 +140,7 @@ func (h *Handler) Register(c *gin.Context) {
 // @Description Verifies user email and password, returning JWT access and refresh token pair
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Param request body LoginRequest true "Login credentials"
 // @Success 200 {object} TokenResponse
 // @Failure 400 {object} problem.Details
@@ -229,7 +218,7 @@ func (h *Handler) Login(c *gin.Context) {
 // @Description Invalidates consumed refresh token and issues a new access and refresh token pair
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Success 200 {object} TokenResponse
 // @Failure 400 {object} problem.Details
 // @Failure 401 {object} problem.Details
@@ -319,7 +308,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @Summary Get user profile
 // @Description Returns the profile data of the currently authenticated user
 // @Tags Account
-// @Produce json
+// @Produce json,application/problem+json
 // @Security BearerAuth
 // @Success 200 {object} UserResponse
 // @Failure 401 {object} problem.Details
@@ -351,7 +340,7 @@ func (h *Handler) Me(c *gin.Context) {
 // @Description Updates user password given verified old password and compliant new password
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Security BearerAuth
 // @Param request body ChangePasswordRequest true "Change password payload"
 // @Success 200 {object} map[string]string
@@ -421,7 +410,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 // @Description Sends a password reset link to the email address if it exists
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Param request body ForgotPasswordRequest true "Forgot password payload"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} problem.Details
@@ -486,7 +475,7 @@ func (h *Handler) ForgotPassword(c *gin.Context) {
 // @Description Updates user password given a valid 15-minute recovery token
 // @Tags Account
 // @Accept json
-// @Produce json
+// @Produce json,application/problem+json
 // @Param request body ResetPasswordRequest true "Reset password payload"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} problem.Details

@@ -36,7 +36,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -91,7 +92,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -140,7 +142,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -194,7 +197,8 @@ const docTemplate = `{
                 ],
                 "description": "Returns the profile data of the currently authenticated user",
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -235,7 +239,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -276,7 +281,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -328,7 +334,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "application/problem+json"
                 ],
                 "tags": [
                     "Account"
@@ -369,6 +376,233 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/graphql": {
+            "get": {
+                "description": "Executes a GraphQL query or mutation with depth, complexity, and budget enforcement",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json",
+                    "application/problem+json"
+                ],
+                "tags": [
+                    "GraphQL"
+                ],
+                "summary": "Execute GraphQL query",
+                "parameters": [
+                    {
+                        "description": "GraphQL request payload",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/graphql.RequestPayload"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "GraphQL query string",
+                        "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "GraphQL operation name",
+                        "name": "operationName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON-encoded GraphQL variables",
+                        "name": "variables",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Executes a GraphQL query or mutation with depth, complexity, and budget enforcement",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json",
+                    "application/problem+json"
+                ],
+                "tags": [
+                    "GraphQL"
+                ],
+                "summary": "Execute GraphQL query",
+                "parameters": [
+                    {
+                        "description": "GraphQL request payload",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/graphql.RequestPayload"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "GraphQL query string",
+                        "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "GraphQL operation name",
+                        "name": "operationName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON-encoded GraphQL variables",
+                        "name": "variables",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Aggregate dependency health status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Deep health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/telemetry.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/telemetry.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health/live": {
+            "get": {
+                "description": "Lightweight in-memory liveness check",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "description": "Readiness check returning 503 while draining",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -385,7 +619,8 @@ const docTemplate = `{
                     "minLength": 8
                 },
                 "oldPassword": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 128
                 }
             }
         },
@@ -411,7 +646,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 128
                 }
             }
         },
@@ -489,6 +725,21 @@ const docTemplate = `{
                 }
             }
         },
+        "graphql.RequestPayload": {
+            "type": "object",
+            "properties": {
+                "operationName": {
+                    "type": "string"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
         "problem.Details": {
             "type": "object",
             "properties": {
@@ -532,6 +783,65 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "telemetry.CheckStatus": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "\"UP\" or \"DOWN\"",
+                    "type": "string"
+                }
+            }
+        },
+        "telemetry.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "services": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/telemetry.CheckStatus"
+                    }
+                },
+                "status": {
+                    "description": "\"UP\" or \"DOWN\"",
+                    "type": "string"
+                },
+                "system_stats": {
+                    "$ref": "#/definitions/telemetry.SystemStats"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "telemetry.SystemStats": {
+            "type": "object",
+            "properties": {
+                "alloc_bytes": {
+                    "type": "integer"
+                },
+                "goroutines": {
+                    "type": "integer"
+                },
+                "heap_alloc_bytes": {
+                    "type": "integer"
+                },
+                "heap_sys_bytes": {
+                    "type": "integer"
+                },
+                "num_gc": {
+                    "type": "integer"
+                },
+                "sys_bytes": {
+                    "type": "integer"
+                },
+                "total_alloc_bytes": {
+                    "type": "integer"
                 }
             }
         }

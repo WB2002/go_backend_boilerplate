@@ -7,6 +7,7 @@ definitions:
         minLength: 8
         type: string
       oldPassword:
+        maxLength: 128
         type: string
     required:
     - newPassword
@@ -24,6 +25,7 @@ definitions:
       email:
         type: string
       password:
+        maxLength: 128
         type: string
     required:
     - email
@@ -79,6 +81,16 @@ definitions:
       status:
         type: string
     type: object
+  graphql.RequestPayload:
+    properties:
+      operationName:
+        type: string
+      query:
+        type: string
+      variables:
+        additionalProperties: true
+        type: object
+    type: object
   problem.Details:
     properties:
       code:
@@ -109,6 +121,45 @@ definitions:
       reason:
         type: string
     type: object
+  telemetry.CheckStatus:
+    properties:
+      error:
+        type: string
+      status:
+        description: '"UP" or "DOWN"'
+        type: string
+    type: object
+  telemetry.HealthResponse:
+    properties:
+      services:
+        additionalProperties:
+          $ref: '#/definitions/telemetry.CheckStatus'
+        type: object
+      status:
+        description: '"UP" or "DOWN"'
+        type: string
+      system_stats:
+        $ref: '#/definitions/telemetry.SystemStats'
+      timestamp:
+        type: string
+    type: object
+  telemetry.SystemStats:
+    properties:
+      alloc_bytes:
+        type: integer
+      goroutines:
+        type: integer
+      heap_alloc_bytes:
+        type: integer
+      heap_sys_bytes:
+        type: integer
+      num_gc:
+        type: integer
+      sys_bytes:
+        type: integer
+      total_alloc_bytes:
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -137,6 +188,7 @@ paths:
           $ref: '#/definitions/account.ChangePasswordRequest'
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -175,6 +227,7 @@ paths:
           $ref: '#/definitions/account.ForgotPasswordRequest'
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -208,6 +261,7 @@ paths:
           $ref: '#/definitions/account.LoginRequest'
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -233,6 +287,7 @@ paths:
       description: Returns the profile data of the currently authenticated user
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -263,6 +318,7 @@ paths:
         refresh token pair
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -297,6 +353,7 @@ paths:
           $ref: '#/definitions/account.RegisterRequest'
       produces:
       - application/json
+      - application/problem+json
       responses:
         "201":
           description: Created
@@ -331,6 +388,7 @@ paths:
           $ref: '#/definitions/account.ResetPasswordRequest'
       produces:
       - application/json
+      - application/problem+json
       responses:
         "200":
           description: OK
@@ -349,6 +407,160 @@ paths:
       summary: Finalize password reset
       tags:
       - Account
+  /graphql:
+    get:
+      consumes:
+      - application/json
+      description: Executes a GraphQL query or mutation with depth, complexity, and
+        budget enforcement
+      parameters:
+      - description: GraphQL request payload
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/graphql.RequestPayload'
+      - description: GraphQL query string
+        in: query
+        name: query
+        type: string
+      - description: GraphQL operation name
+        in: query
+        name: operationName
+        type: string
+      - description: JSON-encoded GraphQL variables
+        in: query
+        name: variables
+        type: string
+      produces:
+      - application/json
+      - application/problem+json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: Request Entity Too Large
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Execute GraphQL query
+      tags:
+      - GraphQL
+    post:
+      consumes:
+      - application/json
+      description: Executes a GraphQL query or mutation with depth, complexity, and
+        budget enforcement
+      parameters:
+      - description: GraphQL request payload
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/graphql.RequestPayload'
+      - description: GraphQL query string
+        in: query
+        name: query
+        type: string
+      - description: GraphQL operation name
+        in: query
+        name: operationName
+        type: string
+      - description: JSON-encoded GraphQL variables
+        in: query
+        name: variables
+        type: string
+      produces:
+      - application/json
+      - application/problem+json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: Request Entity Too Large
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Execute GraphQL query
+      tags:
+      - GraphQL
+  /health:
+    get:
+      description: Aggregate dependency health status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/telemetry.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/telemetry.HealthResponse'
+      summary: Deep health check
+      tags:
+      - Health
+  /health/live:
+    get:
+      description: Lightweight in-memory liveness check
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Liveness probe
+      tags:
+      - Health
+  /health/ready:
+    get:
+      description: Readiness check returning 503 while draining
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Readiness probe
+      tags:
+      - Health
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and JWT token.

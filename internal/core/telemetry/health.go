@@ -147,6 +147,12 @@ func (h *HealthChecker) RegisterRoutes(r gin.IRoutes) {
 }
 
 // HandleLive handles lightweight in-memory liveness probe requests.
+// @Summary Liveness probe
+// @Description Lightweight in-memory liveness check
+// @Tags Health
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /health/live [get]
 func (h *HealthChecker) HandleLive(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "UP",
@@ -154,6 +160,13 @@ func (h *HealthChecker) HandleLive(c *gin.Context) {
 }
 
 // HandleReady handles readiness probe requests, returning 503 during graceful drain.
+// @Summary Readiness probe
+// @Description Readiness check returning 503 while draining
+// @Tags Health
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /health/ready [get]
 func (h *HealthChecker) HandleReady(c *gin.Context) {
 	if h.draining.Load() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -169,6 +182,13 @@ func (h *HealthChecker) HandleReady(c *gin.Context) {
 }
 
 // HandleHealth handles aggregate deep health checks with response caching and singleflight coalescing.
+// @Summary Deep health check
+// @Description Aggregate dependency health status
+// @Tags Health
+// @Produce json
+// @Success 200 {object} HealthResponse
+// @Failure 503 {object} HealthResponse
+// @Router /health [get]
 func (h *HealthChecker) HandleHealth(c *gin.Context) {
 	now := time.Now()
 

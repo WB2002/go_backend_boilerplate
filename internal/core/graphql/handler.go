@@ -174,8 +174,8 @@ func (h *Handler) RegisterRoutes(r gin.IRoutes) {
 	r.POST("/graphql", h.GraphQLHandler())
 	r.GET("/graphql", h.GraphQLHandler())
 	if h.enablePlayground {
-		r.GET("/playground", h.PlaygroundHandler())
-		r.GET("/graphiql", h.PlaygroundHandler())
+		r.Handle(http.MethodGet, "/playground", h.PlaygroundHandler())
+		r.Handle(http.MethodGet, "/graphiql", h.PlaygroundHandler())
 	}
 }
 
@@ -188,6 +188,21 @@ func (h *Handler) PlaygroundHandler() gin.HandlerFunc {
 }
 
 // GraphQLHandler returns a Gin handler processing GraphQL query executions.
+// @Summary Execute GraphQL query
+// @Description Executes a GraphQL query or mutation with depth, complexity, and budget enforcement
+// @Tags GraphQL
+// @Accept json
+// @Produce json,application/problem+json
+// @Param request body RequestPayload false "GraphQL request payload"
+// @Param query query string false "GraphQL query string"
+// @Param operationName query string false "GraphQL operation name"
+// @Param variables query string false "JSON-encoded GraphQL variables"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 413 {object} map[string]interface{}
+// @Failure 429 {object} map[string]interface{}
+// @Router /graphql [post]
+// @Router /graphql [get]
 func (h *Handler) GraphQLHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var payload RequestPayload

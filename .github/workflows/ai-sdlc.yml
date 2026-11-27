@@ -18,9 +18,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Notice guardrail changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          base="${{ github.event.pull_request.base.sha }}"
+          base="${BASE_SHA}"
           echo "Guardrail paths in this pull request:"
           git diff --name-only "$base"...HEAD | grep -E '(^|/)\.cursor/hooks\.json$|(^|/)\.cursor/hooks/|(^|/)\.cursor/BUGBOT\.md$|(^|/)\.cursorignore$|(^|/)scripts/verify[^/]*\.sh$|(^|/)scripts/ratchet\.sh$|(^|/)quality/|(^|/)\.github/|(^|/)CODEOWNERS$' || echo "(none)"
 
@@ -81,4 +83,3 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Run eval scaffold
         run: evals/run.sh
-

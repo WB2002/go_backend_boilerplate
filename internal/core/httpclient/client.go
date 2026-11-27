@@ -433,10 +433,12 @@ func (c *Client) executeWithRetry(ctx context.Context, req *http.Request) (*http
 			jitter := cryptoFloat64()
 			backoff := time.Duration(float64(calc) * jitter)
 
+			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return nil, ctx.Err()
-			case <-time.After(backoff):
+			case <-timer.C:
 			}
 		}
 

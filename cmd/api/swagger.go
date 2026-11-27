@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -17,5 +18,5 @@ func registerSwagger(r gin.IRoutes, appCfg config.AppConfig) {
 	if strings.EqualFold(strings.TrimSpace(appCfg.Env), "production") && !appCfg.EnableSwagger {
 		return
 	}
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.Handle(http.MethodGet, "/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
