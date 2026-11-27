@@ -9,7 +9,8 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/jackc/pgx/v5 v5.13.0
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/pressly/goose/v3 v3.22.1
 	github.com/redis/go-redis/v9 v9.24.0
@@ -62,7 +63,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.13.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
