@@ -1,32 +1,38 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure local Go and user binaries are in PATH
 export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/bin:$PATH"
 
-echo "🔍 Running pre-commit quality gate..."
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "${ROOT_DIR}"
 
-# 1. Check if Go code is being committed
-STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
-if [ -z "$STAGED_GO_FILES" ]; then
-    exit 0
+STAGED_GO_FILES="$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)"
+if [[ -n "${STAGED_GO_FILES}" ]]; then
+  UNFORMATTED="$(printf '%s\n' "${STAGED_GO_FILES}" | xargs gofmt -l)"
+  if [[ -n "${UNFORMATTED}" ]]; then
+    echo "The following Go files are not formatted (run gofmt -w):" >&2
+    printf '%s\n' "${UNFORMATTED}" >&2
+    exit 1
+  fi
+
+  if command -v golangci-lint >/dev/null 2>&1; then
+    lint_out="$(mktemp)"
+    if ! golangci-lint run ./... 2>"${lint_out}"; then
+      if grep -q "used to build golangci-lint is lower than the targeted Go version" "${lint_out}"; then
+        echo "Warning: skipping golangci-lint (binary built with older Go than go.mod); falling back to go vet." >&2
+        rm -f "${lint_out}"
+        go vet ./...
+      else
+        cat "${lint_out}" >&2
+        rm -f "${lint_out}"
+        exit 1
+      fi
+    else
+      rm -f "${lint_out}"
+    fi
+  else
+    go vet ./...
+  fi
 fi
 
-# 2. Run golangci-lint (checks vague variables via forbidigo, vet, formatting, etc.)
-if command -v golangci-lint >/dev/null 2>&1; then
-    echo "⚡ Checking code quality & variable naming with golangci-lint..."
-    if ! golangci-lint run ./...; then
-        echo ""
-        echo "❌ Pre-commit check failed! Fix the lint errors / vague variable names above before committing."
-        exit 1
-    fi
-else
-    echo "⚠️  golangci-lint not found in PATH, running go vet ./..."
-    if ! go vet ./...; then
-        echo ""
-        echo "❌ Pre-commit check failed! Fix the go vet errors above before committing."
-        exit 1
-    fi
-fi
-
-echo "✅ Pre-commit quality gate passed!"
+./scripts/gitleaks-pre-commit.sh

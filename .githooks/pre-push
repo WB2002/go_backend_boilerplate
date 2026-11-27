@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:$HOME/go/bin:/usr/local/bin:$PATH"
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "${ROOT_DIR}"
+
+if command -v golangci-lint >/dev/null 2>&1; then
+  lint_out="$(mktemp)"
+  if ! golangci-lint run ./... 2>"${lint_out}"; then
+    if grep -q "used to build golangci-lint is lower than the targeted Go version" "${lint_out}"; then
+      echo "Warning: skipping golangci-lint (binary built with older Go than go.mod); falling back to go vet." >&2
+    else
+      cat "${lint_out}" >&2
+      rm -f "${lint_out}"
+      exit 1
+    fi
+  fi
+  rm -f "${lint_out}"
+fi
+
+go build ./...
+go vet ./...
+go test -race -short ./cmd/... ./internal/...
