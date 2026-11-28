@@ -71,7 +71,7 @@ data integrity, accessibility, and essential failure handling remain mandatory.
 ## Where the control plane lives
 
 - Constitution → `.cursor/skills/` (`architecture`, `testing`, `observability`, `database`, `api`, `operations`, `security-baseline`, `security-sharp-edges`, `frontend-ui-engineering`, `resilience`, `ai-engineering`, `billing-webhooks`, `source-driven-development`, `doubt-driven-development`, `verification-before-completion`). Engineering principles stay in `AGENTS.md`.
-- Product & release workflow skills → `.cursor/skills/market-opportunity-research/`, `.cursor/skills/new-intent/`, `.cursor/skills/design-experience/`, `.cursor/skills/fast-track/`, `.cursor/skills/security-audit/`, and `.cursor/skills/ship-check/`.
+- Product & release workflow skills → `.cursor/skills/idea-to-blueprint/`, `.cursor/skills/market-opportunity-research/`, `.cursor/skills/new-intent/`, `.cursor/skills/design-experience/`, `.cursor/skills/fast-track/`, `.cursor/skills/security-audit/`, and `.cursor/skills/ship-check/`.
 - Role and review agents → `.cursor/agents/` (`orchestrator`,
   `system-architect`, `ui-ux-researcher`, `ui-ux-designer`, `ux-reviewer`,
   `backend-engineer`, `frontend-engineer`, `devops`, `infrastructure`, `qa`,
@@ -99,6 +99,7 @@ Add a line under **Things the agent gets wrong** in `AGENTS.md`. A repeated less
 
 ## More slash commands
 
+- `/idea-to-blueprint` — walk a high-level product idea down a 7-level zoom ladder (vision, core loop, journey, screens/states, rules/data, hit details, build plan) via recommended options into a buildable Product Blueprint.
 - `/project-brief` — interview, then write the product brief, NFRs, an architecture stub, and a proposed stack ADR.
 - `/record-decision` — write the next ADR and index it.
 - `/doc-sync` — update docs from the diff and the plan's Docs impact.
